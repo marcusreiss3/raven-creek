@@ -23,8 +23,17 @@ function normalizePem(raw: string): string {
  * DATABASE_PASSWORD (opcional) substitui a senha da URL. Assim dá para colar a URL do painel como vem
  * (até com "<password>") e pôr a senha à parte, sem se preocupar com caracteres especiais (@ : / # %…).
  */
+/** Senha de DATABASE_PASSWORD. Se colarem a URL inteira ali por engano, usa a senha de dentro dela. */
+function envPassword(): string | undefined {
+  const raw = process.env.DATABASE_PASSWORD?.trim();
+  if (!raw) return undefined;
+  const m = raw.match(/^postgres(?:ql)?:\/\/[^:@/]*:([^@/]*)@/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
+  return raw;
+}
+
 function withPassword(url: string): string {
-  const pw = process.env.DATABASE_PASSWORD?.trim();
+  const pw = envPassword();
   if (!pw) return url;
   const m = url.match(/^(postgres(?:ql)?:\/\/)([^@/]*)@(.*)$/);
   if (!m) return url;
@@ -53,8 +62,9 @@ function describe(rawUrl: string) {
   const m = rawUrl.trim().match(/^postgres(?:ql)?:\/\/([^@/]*)@([^/?]+)(\/[^?]*)?/);
   if (!m) return 'DATABASE_URL não parece uma URL postgresql://usuario:senha@host:porta/banco';
   const [user, urlPw = ''] = m[1].split(':');
-  const fromEnv = process.env.DATABASE_PASSWORD?.trim();
-  const pw = fromEnv ? `DATABASE_PASSWORD (${fromEnv.length} caracteres)` : /^<.*>$/.test(urlPw) ? 'AINDA É O MODELO "<password>" — defina DATABASE_PASSWORD' : urlPw ? `da própria URL (${decodeURIComponent(urlPw).length} caracteres)` : 'nenhuma';
+  const fromEnv = envPassword();
+  const urlInEnv = /^postgres(?:ql)?:\/\//.test(process.env.DATABASE_PASSWORD?.trim() ?? '');
+  const pw = fromEnv ? `DATABASE_PASSWORD${urlInEnv ? ' (era uma URL; usei a senha de dentro dela)' : ''} (${fromEnv.length} caracteres)` : /^<.*>$/.test(urlPw) ? 'AINDA É O MODELO "<password>" — defina DATABASE_PASSWORD' : urlPw ? `da própria URL (${decodeURIComponent(urlPw).length} caracteres)` : 'nenhuma';
   const cert = process.env.DATABASE_CERT || process.env.DATABASE_CERT_B64 ? 'com certificado' : 'sem certificado';
   return `usuário "${user}" em ${m[2]}, banco "${(m[3] ?? '/').slice(1) || user}", senha: ${pw}, ${cert}`;
 }
