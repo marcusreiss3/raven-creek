@@ -54,7 +54,7 @@ export function TravelScreen({ onCharacterClick }: { onCharacterClick?: (c: Scen
   return (
     <div className="relative flex-1 overflow-hidden bg-black noise select-none">
       {/* fundo: desliza devagar enquanto o grupo anda, congela quando param */}
-      <Img key={t.sceneKey} src={sceneUrl(t.sceneKey)} fallback="/assets/scenes/road_asphalt_01.png" className="absolute inset-0 w-full h-full object-cover anim-fade"
+      <Img key={t.sceneKey} src={sceneUrl(t.sceneKey)} fallback="/assets/scenes/road_asphalt_01.webp" className="absolute inset-0 w-full h-full object-cover anim-fade"
         style={{ transform: `scale(1.06) translateX(${-pct / 40}%)`, transition: 'transform 1s linear' }} />
       <div className="absolute inset-0 pointer-events-none transition-all duration-[3000ms]" style={{ background: phase === 'night' ? 'rgba(6,10,26,.62)' : phase === 'dusk' ? 'rgba(80,35,10,.28)' : phase === 'dawn' ? 'rgba(60,50,80,.22)' : 'transparent', mixBlendMode: 'multiply' }} />
       {(weather === 'rain' || weather === 'storm') && <div className={`absolute inset-0 pointer-events-none fx-rain ${weather === 'storm' ? 'fx-storm' : ''}`} />}

@@ -8,7 +8,7 @@ import { action } from './socket';
 import { audio } from './audio';
 
 export type PEvent = { id: number; kind: string; thread: string; payload: Record<string, any>; createdAt: string };
-export type AskOption = { id: string; label: string; check?: { label: string; chance: number } };
+export type AskOption = { id: string; label: string; icon?: string; check?: { label: string; chance: number } };
 export type Chronicle = { name: string; status: string; marks: { id: string; name: string; text: string }[]; lines: string[]; location: string };
 export type SocialData = { likedBy: number[]; comments: { id: number; by: number; name: string; text: string; at: number }[] };
 export type PhoneSession = { id: number; startedAt: number; speed: number; signal: number; powerOut: boolean; act: number; minutes: number };

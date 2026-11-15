@@ -41,7 +41,7 @@ export async function seed(opts: { demo?: boolean } = {}) {
     for (const e of EVENT_DEFS) await tx.insert(schema.eventDefs).values({ ...e, cooldownMinutes: e.cooldownMinutes ?? 0, conditions: e.conditions ?? {}, effects: e.effects ?? {}, requiresDecision: e.requiresDecision ?? false }).onConflictDoNothing();
     // Catálogo de assets
     const assets = [
-      ...SCENE_KEYS.map((k) => ({ key: k, kind: 'scene', path: `/assets/scenes/${k}.png`, label: k.replace(/_/g, ' '), width: 1920, height: 1080 })),
+      ...SCENE_KEYS.map((k) => ({ key: k, kind: 'scene', path: `/assets/scenes/${k}.webp`, label: k.replace(/_/g, ' '), width: 1920, height: 1080 })),
       ...ARENA_KEYS.map((k) => ({ key: `arena_${k}`, kind: 'arena', path: `/assets/arenas/${k}.png`, label: `Arena: ${k}`, width: 1024, height: 704 })),
       { key: 'portrait_default', kind: 'portrait', path: '/assets/portraits/default.png', label: 'Retrato padrão', width: 600, height: 900 },
       { key: 'portrait_npc_survivor', kind: 'portrait', path: '/assets/portraits/npc_survivor.png', label: 'NPC sobrevivente', width: 600, height: 900 },

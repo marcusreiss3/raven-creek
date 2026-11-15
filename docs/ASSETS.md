@@ -10,8 +10,8 @@ Imagens ausentes caem automaticamente num *fallback*.
 
 | Tipo | Caminho | Tamanho | Observações |
 |---|---|---|---|
-| Cenário (visual novel) | `/assets/scenes/<chave>.png` | **1920×1080** (16:9) | Exibido com `object-fit: cover`; mantenha o assunto principal no terço superior/central — os retratos ocupam a parte de baixo. JPG/WEBP enviados pelo painel são convertidos para PNG. |
-| Cenário de viagem | `/assets/scenes/road_asphalt_01.png`, `road_dirt_01`, `forest_road_03`… | 1920×1080 | Usado durante o deslocamento (há um leve *pan* lateral). |
+| Cenário (visual novel) | `/assets/scenes/<chave>.webp` | **1920×1080** (16:9) | Exibido com `object-fit: cover`; mantenha o assunto principal no terço superior/central — os retratos ocupam a parte de baixo. PNG/JPG enviados pelo painel são convertidos para WEBP. |
+| Cenário de viagem | `/assets/scenes/road_asphalt_01.webp`, `road_dirt_01`, `forest_road_03`… | 1920×1080 | Usado durante o deslocamento (há um leve *pan* lateral). |
 | Retrato de jogador | enviado pelo jogador | ~800×1200, PNG transparente | Cintura/peito para cima. O servidor valida PNG real, mínimo 200×250, máximo 4096², re-codifica e remove metadados. |
 | Retratos de NPC / padrão | `/assets/portraits/default.png`, `npc_survivor.png` | 600×900 PNG transparente | |
 | Arena tática | `/assets/arenas/<chave>.png` | **1024×704** (16×11 casas de 64 px) | Arte de vista de cima gerada por `python3 client/scripts/gen-arenas.py` a partir da geometria de `server/src/game/combat/maps.ts` (paredes, portas, coberturas). Se mudar um mapa, rode o script de novo. Portas e escombros são desenhados por cima pelo jogo (`/assets/arenas/sprites/`). Para trocar por arte própria, mantenha a imagem alinhada à grade de 64 px. |

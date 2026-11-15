@@ -469,7 +469,8 @@ adminRouter.post('/assets/:key', adminOnly, assetUpload.single('file'), wrap(asy
   } else {
     const meta = await sharp(req.file.buffer).metadata();
     if (!['png', 'jpeg', 'webp'].includes(meta.format ?? '')) throw new Error('Imagem deve ser PNG, JPG ou WEBP.');
-    const out = await sharp(req.file.buffer).png().toBuffer();
+    // Cenários são WEBP (leves para carregar); o resto continua PNG.
+    const out = await (a.path.endsWith('.webp') ? sharp(req.file.buffer).webp({ quality: 84 }) : sharp(req.file.buffer).png()).toBuffer();
     await fs.mkdir(path.dirname(path.join(CLIENT_PUBLIC_DIR, a.path)), { recursive: true });
     await fs.writeFile(path.join(CLIENT_PUBLIC_DIR, a.path), out);
   }

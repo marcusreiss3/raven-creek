@@ -18,7 +18,7 @@ export function AuthScreen({ onDone }: { onDone: () => void }) {
   };
   return (
     <main className="relative h-full w-full overflow-hidden noise">
-      <Img src="/assets/scenes/main_menu.png" fallback="/assets/scenes/street_city_01.png" className="absolute inset-0 w-full h-full object-cover opacity-50 scale-105" />
+      <Img src="/assets/scenes/main_menu.webp" fallback="/assets/scenes/street_city_01.webp" className="absolute inset-0 w-full h-full object-cover opacity-50 scale-105" />
       <div className="absolute inset-0 vignette" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#0b0c07]/95 via-[#0b0c07]/55 to-transparent" />
       <div className="relative h-full flex items-center px-[8vw]">

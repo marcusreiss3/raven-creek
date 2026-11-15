@@ -158,6 +158,12 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    version: 13, name: 'Cenários em WEBP (arquivos bem mais leves)',
+    run: async () => {
+      await db.execute(sql`update assets set path = regexp_replace(path, '\\.png$', '.webp') where kind = 'scene' and path like '/assets/scenes/%.png'`);
+    },
+  },
 ];
 
 export async function applyPatches() {

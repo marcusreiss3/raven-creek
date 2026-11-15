@@ -256,7 +256,7 @@ C('in_scrapyard', 'fo_trailhead', 'dirt', 'road_dirt_01');
 C('rc_workshop', 'hw_crossroads', 'asphalt', 'road_asphalt_02');
 C('res_cul_de_sac', 'hw_route9_west', 'dirt', 'road_dirt_01');
 
-/** Catálogo de cenários. Os PNG ficam em client/public/assets/scenes/<key>.png (1920×1080 recomendado). */
+/** Catálogo de cenários. As imagens ficam em client/public/assets/scenes/<key>.webp (1920×1080 recomendado). */
 export const SCENE_KEYS = Array.from(new Set([
   ...LOCATIONS.map((l) => l.sceneKey), ...CONNECTIONS.map((c) => c.travelSceneKey),
   'road_asphalt_01', 'road_asphalt_02', 'road_dirt_01', 'forest_road_03', 'main_menu', 'death_screen',

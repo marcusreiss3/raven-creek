@@ -55,7 +55,7 @@ export type Msg = {
   if?: Cond;
   /** Foto/vídeo anexado (descrição curta que aparece como mídia). */
   media?: string;
-  /** Imagem da postagem/notícia: client/public/assets/dia1/social/<img>.png (ver docs/DIA1_IMAGENS.md). */
+  /** Imagem da postagem/notícia: client/public/assets/dia1/social/<img>.webp (ver docs/DIA1_IMAGENS.md). */
   img?: string;
   /** Comentários de moradores (NPCs) que já aparecem na postagem. */
   comments?: { from: string; text: string }[];

@@ -121,7 +121,7 @@ export function TopBar() {
 // ───────────────────────── Palco da visual novel (camadas) ─────────────────────────
 /**
  * `musicKey` troca a trilha do local (Dia 1: música calma antes da queda) e `sceneVariant` usa outra versão da arte do
- * local, se existir (ex.: `hospital_lobby_antes.png`, o hospital antes do apocalipse); senão, a arte normal.
+ * local, se existir (ex.: `hospital_lobby_antes.webp`, o hospital antes do apocalipse); senão, a arte normal.
  */
 export function SceneStage({ onCharacterClick, compact, musicKey, sceneVariant }: { onCharacterClick: (c: SceneChar) => void; compact?: boolean; musicKey?: string; sceneVariant?: string }) {
   const { scene, self, clock } = useGame();
@@ -155,7 +155,7 @@ export function SceneStage({ onCharacterClick, compact, musicKey, sceneVariant }
   const phase = clock?.phase ?? scene.time.phase; const weather = clock?.weather ?? scene.time.weather;
   return (
     <main className={`relative overflow-hidden bg-black select-none noise ${compact ? 'h-full compact-stage' : 'flex-1'}`} aria-label={`Cena: ${scene.location.name}`}>
-      <Img key={scene.location.sceneKey + (sceneVariant ?? '')} src={sceneUrl(scene.location.sceneKey + (sceneVariant ?? ''))} fallback={sceneVariant ? sceneUrl(scene.location.sceneKey) : '/assets/scenes/street_city_01.png'} className="absolute inset-0 w-full h-full object-cover anim-fade scale-[1.03]" />
+      <Img key={scene.location.sceneKey + (sceneVariant ?? '')} src={sceneUrl(scene.location.sceneKey + (sceneVariant ?? ''))} fallback={sceneVariant ? sceneUrl(scene.location.sceneKey) : '/assets/scenes/street_city_01.webp'} className="absolute inset-0 w-full h-full object-cover anim-fade scale-[1.03]" />
       <div className="absolute inset-0 pointer-events-none transition-all duration-[3000ms]" style={{ background: phase === 'night' ? (scene.powered ? 'rgba(40,30,20,.32)' : 'rgba(6,10,26,.62)') : phase === 'dusk' ? 'rgba(80,35,10,.28)' : phase === 'dawn' ? 'rgba(60,50,80,.22)' : 'transparent', mixBlendMode: 'multiply' }} />
       {phase === 'night' && scene.powered && <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 20%, rgba(255,190,110,.16), transparent 60%)', mixBlendMode: 'screen' }} />}
       {!scene.location.indoor && (weather === 'rain' || weather === 'storm') && <div className={`absolute inset-0 pointer-events-none fx-rain ${weather === 'storm' ? 'fx-storm' : ''}`} />}

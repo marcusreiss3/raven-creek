@@ -30,7 +30,7 @@ function countdown(ms: number) {
 function Backdrop({ children }: { children: ReactNode }) {
   return (
     <main className="relative h-full w-full overflow-hidden noise">
-      <Img src="/assets/scenes/main_menu.png" fallback="/assets/scenes/street_city_01.png" className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105" />
+      <Img src="/assets/scenes/main_menu.webp" fallback="/assets/scenes/street_city_01.webp" className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105" />
       <div className="absolute inset-0 vignette" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#0b0c07]/95 via-[#0b0c07]/70 to-[#0b0c07]/30" />
       <div className="relative h-full overflow-y-auto flex items-center px-[6vw] py-8">

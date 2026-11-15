@@ -56,13 +56,14 @@ async function writeIfMissing(file: string, svg: string, force: boolean) {
   const full = path.join(CLIENT_PUBLIC_DIR, file);
   if (!force) { try { await fs.access(full); return false; } catch { /* gerar */ } }
   await fs.mkdir(path.dirname(full), { recursive: true });
-  await fs.writeFile(full, await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer());
+  const img = sharp(Buffer.from(svg));
+  await fs.writeFile(full, await (file.endsWith('.webp') ? img.webp({ quality: 84 }) : img.png({ compressionLevel: 9 })).toBuffer());
   return true;
 }
 
 export async function generatePlaceholders(force = false) {
   let n = 0;
-  for (const key of SCENE_KEYS) if (await writeIfMissing(`assets/scenes/${key}.png`, sceneSvg(key, 1920, 1080, `/assets/scenes/${key}.png · 1920×1080 (16:9)`), force)) n++;
+  for (const key of SCENE_KEYS) if (await writeIfMissing(`assets/scenes/${key}.webp`, sceneSvg(key, 1920, 1080, `/assets/scenes/${key}.webp · 1920×1080 (16:9)`), force)) n++;
   for (const key of ARENA_KEYS) if (await writeIfMissing(`assets/arenas/${key}.png`, arenaSvg(key), force)) n++;
   if (await writeIfMissing('assets/portraits/default.png', portraitSvg('retrato não enviado'), force)) n++;
   if (await writeIfMissing('assets/portraits/npc_survivor.png', portraitSvg('NPC — placeholder'), force)) n++;

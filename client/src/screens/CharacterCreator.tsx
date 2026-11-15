@@ -130,7 +130,7 @@ export function CharacterCreator({ onDone }: { onDone: () => void }) {
 
   if (mobile) return (
     <main className="relative flex flex-col overflow-hidden noise" style={{ height: 'var(--app-h, 100dvh)' }}>
-      <Img src="/assets/scenes/main_menu.png" fallback="/assets/scenes/suburb_street_01.png" className="absolute inset-0 w-full h-full object-cover opacity-20" />
+      <Img src="/assets/scenes/main_menu.webp" fallback="/assets/scenes/suburb_street_01.webp" className="absolute inset-0 w-full h-full object-cover opacity-20" />
       <div className="absolute inset-0 bg-gradient-to-b from-[#0b0c07]/70 to-[#0b0c07]/95" />
       <header className="relative shrink-0 safe-t px-3 pt-3">
         <div className="flex items-center justify-between gap-2"><span className="tape !text-[14px]">Registro de sobrevivente</span><span className="text-[13px] text-ink-400">Etapa {step + 1} de 5</span></div>
@@ -153,7 +153,7 @@ export function CharacterCreator({ onDone }: { onDone: () => void }) {
 
   return (
     <main className="relative h-full overflow-hidden noise">
-      <Img src="/assets/scenes/main_menu.png" fallback="/assets/scenes/suburb_street_01.png" className="absolute inset-0 w-full h-full object-cover opacity-25" />
+      <Img src="/assets/scenes/main_menu.webp" fallback="/assets/scenes/suburb_street_01.webp" className="absolute inset-0 w-full h-full object-cover opacity-25" />
       <div className="absolute inset-0 vignette" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#0b0c07]/40 via-[#0b0c07]/70 to-[#0b0c07]/90" />
       <div className="relative h-full flex flex-col max-w-[1240px] mx-auto px-8 py-6">
@@ -423,7 +423,7 @@ function PhotoStep({ created, portrait, adjust, setAdjust, warning, fileRef, upl
         )}
       </div>
       <figure className="relative h-[420px] max-sm:h-[280px] max-sm:order-first max-sm:mx-6 border-[10px] border-b-[38px] border-[#e9e2cf] shadow-[0_10px_30px_rgba(0,0,0,.7)] overflow-hidden bg-ink-900 rotate-[1deg]">
-        <Img src="/assets/scenes/street_city_01.png" fallback="/assets/scenes/street_city_01.png" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+        <Img src="/assets/scenes/street_city_01.webp" fallback="/assets/scenes/street_city_01.webp" className="absolute inset-0 w-full h-full object-cover opacity-60" />
         <div className="absolute inset-x-0 bottom-0 h-[88%] flex justify-center" style={{ transform: `translateX(${adjust.x}%) translateY(${-adjust.y}%) scale(${adjust.scale})`, transformOrigin: 'bottom center' }}>
           <Img src={portrait ?? '/assets/portraits/default.png'} fallback="/assets/portraits/default.png" className="h-full w-auto max-w-none object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,.8)]" />
         </div>

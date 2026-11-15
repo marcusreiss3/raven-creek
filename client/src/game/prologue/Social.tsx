@@ -1,7 +1,7 @@
 /**
  * Raven Rede (rede social da cidade) e RC Agora (notícias) no celular do Dia 1.
  * As postagens são as mesmas para todo mundo: os jogadores curtem, comentam e veem os comentários uns dos outros.
- * Imagens: client/public/assets/dia1/social/<chave>.png (se faltar, aparece um quadro com a legenda).
+ * Imagens: client/public/assets/dia1/social/<chave>.webp (se faltar, aparece um quadro com a legenda).
  */
 import { useMemo, useState } from 'react';
 import { ChevronLeft, Heart, MessageCircle, Play, Send, WifiOff } from 'lucide-react';
@@ -30,7 +30,7 @@ function useAgo(createdAt: string) {
   return `${Math.floor(gameMin / 60)} h`;
 }
 
-function PostImage({ img, media, news }: { img?: string; media?: string; news?: boolean }) {
+function PostImage({ img, media }: { img?: string; media?: string; news?: boolean }) {
   const [broken, setBroken] = useState(false);
   const video = media?.startsWith('Vídeo') && media !== 'Vídeo indisponível';
   const live = /ao vivo/i.test(media ?? '');
@@ -39,7 +39,7 @@ function PostImage({ img, media, news }: { img?: string; media?: string; news?: 
   return (
     <div className={`relative mt-2 rounded-xl overflow-hidden border border-white/10 bg-[#1a1d23] aspect-video`}>
       {img && !broken
-        ? <img src={`/assets/dia1/social/${img}.png`} alt={media ?? ''} loading="lazy" onError={() => setBroken(true)} className={`w-full h-full object-cover ${video ? 'brightness-90' : ''}`} />
+        ? <img src={`/assets/dia1/social/${img}.webp`} alt={media ?? ''} loading="lazy" onError={() => setBroken(true)} className={`w-full h-full object-cover ${video ? 'brightness-90' : ''}`} />
         : <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12.5px] text-white/45 italic bg-[radial-gradient(circle_at_40%_40%,#2b3038,#14171c)]">{media ?? 'Foto'}</div>}
       {video && <span className="absolute inset-0 flex items-center justify-center"><span className="w-12 h-12 rounded-full bg-black/55 flex items-center justify-center text-white"><Play size={22} fill="currentColor" /></span></span>}
       {video && <span className="absolute right-2 bottom-2 rounded bg-black/70 text-white text-[11px] px-1.5 py-0.5 tabular-nums">{media!.replace(/^Vídeo · /, '')}</span>}

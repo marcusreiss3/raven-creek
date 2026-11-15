@@ -189,7 +189,7 @@ function World() {
                 <div className="flex flex-col gap-1 pt-4"><label className="text-sm"><input type="checkbox" checked={loc.buildable} onChange={(e) => save({ buildable: e.target.checked })} /> Fortificável</label><label className="text-sm"><input type="checkbox" checked={loc.indoor} onChange={(e) => save({ indoor: e.target.checked })} /> Interior</label></div>
               </div>
             </div>
-            <Img src={`/assets/scenes/${loc.sceneKey}.png`} fallback="/assets/scenes/street_city_01.png" className="w-full aspect-video object-cover border border-ink-700" />
+            <Img src={`/assets/scenes/${loc.sceneKey}.webp`} fallback="/assets/scenes/street_city_01.webp" className="w-full aspect-video object-cover border border-ink-700" />
           </div>
           {loc.loot && <Section title="Recursos e ameaça (persistentes)">
             <div className="grid grid-cols-4 gap-2">{['reserve', 'maxReserve', 'regenPerHour', 'zombies'].map((k) => <label key={k}><span className="label !text-[9px]">{k}</span><input type="number" step="any" className="input !py-1" defaultValue={Math.round(loc.loot[k] * 10) / 10} onBlur={(e) => run(api(`/admin/location-loot/${loc.id}`, { method: 'PATCH', body: { [k]: k === 'zombies' ? Math.round(Number(e.target.value)) : Number(e.target.value) } })).then(reload)} /></label>)}</div>
@@ -370,7 +370,7 @@ function Assets() {
       <div className="flex gap-1 mb-4">{['scene', 'arena', 'portrait', 'audio'].map((k) => <button key={k} onClick={() => setKind(k)} className={`chip ${kind === k ? 'border-amber-450 text-amber-450' : 'text-ink-400'}`}>{k}</button>)}</div>
       <div className="grid grid-cols-4 gap-3">{data?.assets.filter((a: any) => a.kind === kind).map((a: any) => (
         <div key={a.key} className="panel p-2">
-          {a.kind !== 'audio' ? <Img src={a.path + `?v=${new Date(a.updatedAt).getTime()}`} fallback="/assets/scenes/street_city_01.png" className={`w-full ${a.kind === 'portrait' ? 'aspect-[2/3] object-contain' : 'aspect-video object-cover'} bg-ink-950`} /> : <div className="h-12 flex items-center">{a.exists ? <audio controls src={a.path} className="w-full h-8" /> : <span className="text-xs text-ink-500">arquivo ausente</span>}</div>}
+          {a.kind !== 'audio' ? <Img src={a.path + `?v=${new Date(a.updatedAt).getTime()}`} fallback="/assets/scenes/street_city_01.webp" className={`w-full ${a.kind === 'portrait' ? 'aspect-[2/3] object-contain' : 'aspect-video object-cover'} bg-ink-950`} /> : <div className="h-12 flex items-center">{a.exists ? <audio controls src={a.path} className="w-full h-8" /> : <span className="text-xs text-ink-500">arquivo ausente</span>}</div>}
           <div className="text-xs font-mono mt-1 truncate">{a.key}</div>
           <div className="text-[10px] text-ink-500 truncate">{a.path} {a.width ? `· ${a.width}×${a.height}` : ''}</div>
           <div className="flex justify-between items-center mt-1"><span className={`text-[10px] ${a.isPlaceholder ? 'text-amber-450' : 'text-moss-400'}`}>{a.exists ? (a.isPlaceholder ? 'placeholder' : 'definitivo') : 'ausente'}</span>

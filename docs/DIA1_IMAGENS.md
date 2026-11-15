@@ -1,6 +1,6 @@
 # Imagens da Raven Rede e do RC Agora (Dia 1)
 
-Salve cada imagem em `client/public/assets/dia1/social/<nome>.png` (o nome é a chave da lista).
+Salve cada imagem em `client/public/assets/dia1/social/<nome>.webp` (o nome é a chave da lista; se gerar em PNG, converta para WEBP ou envie pelo painel).
 Enquanto uma imagem não existir, o celular mostra um quadro com a legenda no lugar.
 
 - **Postagens da Raven Rede**: proporção **16:9** (ex.: 1280×720), "foto de celular".

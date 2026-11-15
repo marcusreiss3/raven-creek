@@ -13,6 +13,6 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 }
 
 /** Caminho de asset com fallback: se o arquivo não existir, o componente troca para o placeholder. */
-export const sceneUrl = (key: string) => `/assets/scenes/${key}.png`;
+export const sceneUrl = (key: string) => `/assets/scenes/${key}.webp`;
 export const arenaUrl = (key: string) => `/assets/arenas/${key}.png`;
 export const portraitUrl = (p: string | null | undefined) => p || '/assets/portraits/default.png';
