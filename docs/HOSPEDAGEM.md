@@ -13,7 +13,9 @@ O jogo precisa de um PostgreSQL. As opções são:
 
 - **Supabase (grátis)**: crie um projeto e, em *Connect*, copie a URI do **Session pooler**
   (porta 5432). O SSL é ativado sozinho para endereços do Supabase.
-- **Banco da Square Cloud** (planos Standard em diante).
+- **Banco da Square Cloud** (planos Standard em diante): copie a URL de conexão para `DATABASE_URL`,
+  baixe o `certificate.pem` e cole o conteúdo dele inteiro em `DATABASE_CERT`. O certificado
+  nunca deve ir para o GitHub.
 - Qualquer outro PostgreSQL. Se ele exigir SSL, defina `DATABASE_SSL=1`.
 
 As tabelas e o mundo são criados sozinhos na primeira subida.
@@ -27,6 +29,7 @@ As tabelas e o mundo são criados sozinhos na primeira subida.
 | `SEED_ADMIN_PASSWORD` | sim | senha da conta `admin` criada num banco novo |
 | `SEED_DEMO` | recomendado `0` | `0` não cria as contas de demonstração |
 | `CLIENT_ORIGIN` | opcional | endereço do site, ex. `https://ravencreek.squareweb.app` |
+| `DATABASE_CERT` | só no banco da Square | conteúdo do `certificate.pem` |
 | `DB_POOL_MAX` | opcional | conexões simultâneas com o banco (padrão 15) |
 
 ## Avisos
