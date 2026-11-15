@@ -2,7 +2,7 @@
 // 1) instala as dependências do servidor e do cliente (só quando package.json/lock mudam);
 // 2) compila o cliente (só quando o código do cliente muda);
 // 3) sobe o servidor, que entrega o site, a API e o Socket.IO na mesma porta (PORT, 80 na Square Cloud).
-// Variáveis obrigatórias: DATABASE_URL e JWT_SECRET. Veja docs/HOSPEDAGEM.md.
+// Variável obrigatória: DATABASE_URL (JWT_SECRET é opcional: sem ele, o servidor gera um e guarda no banco). Veja docs/HOSPEDAGEM.md.
 import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, cpSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -15,7 +15,7 @@ const clientDir = join(root, 'client');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const log = (m) => console.log(`[raven-creek] ${m}`);
 
-const missing = ['DATABASE_URL', 'JWT_SECRET'].filter((k) => !process.env[k]);
+const missing = ['DATABASE_URL'].filter((k) => !process.env[k]);
 if (missing.length) {
   log(`Faltam variáveis de ambiente: ${missing.join(', ')}. Configure no painel da hospedagem (Variáveis de ambiente).`);
   process.exit(1);

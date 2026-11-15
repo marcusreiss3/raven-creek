@@ -12,9 +12,11 @@ import { ensureProjects } from './game/services/projects.js';
 import { loadFires } from './game/services/nature.js';
 import { loadServerStatus } from './game/services/serverStatus.js';
 import { loadPrologue } from './game/services/prologue.js';
+import { ensureJwtSecret } from './config/secret.js';
 
 async function main() {
   await runMigrations();
+  await ensureJwtSecret();
   // Rede de segurança: se o mundo não existir (ex.: seed nunca executado), cria agora. O seed é idempotente.
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM locations');
   if (rows[0].n < 100) {

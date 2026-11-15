@@ -25,7 +25,7 @@ As tabelas e o mundo são criados sozinhos na primeira subida.
 | Variável | Obrigatória | O que é |
 |---|---|---|
 | `DATABASE_URL` | sim | URI do PostgreSQL |
-| `JWT_SECRET` | sim | texto longo e aleatório (assina os logins) |
+| `JWT_SECRET` | não | segredo dos logins; sem ele, o servidor gera um e guarda no banco |
 | `SEED_ADMIN_PASSWORD` | sim | senha da conta `admin` criada num banco novo |
 | `SEED_DEMO` | recomendado `0` | `0` não cria as contas de demonstração |
 | `CLIENT_ORIGIN` | opcional | endereço do site, ex. `https://ravencreek.squareweb.app` |
