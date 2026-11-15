@@ -189,6 +189,36 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    version: 15, name: 'Classes de suporte: fome mais presente, cozinheiro, agricultor e professor mais fortes',
+    run: async () => {
+      // fome e sede passam a pesar (tempo conectado); só muda se ainda estiver no valor antigo
+      const [g] = await db.select().from(schema.gameConfig).where(eq(schema.gameConfig.key, 'game'));
+      if (g?.value?.needs) {
+        const v = structuredClone(g.value);
+        if (v.needs.hungerPerHour === 3) v.needs.hungerPerHour = 7;
+        if (v.needs.thirstPerHour === 4.5) v.needs.thirstPerHour = 8;
+        await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
+      }
+      const stew = RECIPES.find((r) => r.id === 'hearty_stew');
+      if (stew) await db.insert(schema.recipes).values(stew as any).onConflictDoUpdate({ target: schema.recipes.id, set: stew as any });
+      // quem já é cozinheiro aprende o ensopado; professores ganham os níveis novos da profissão
+      const chars = await db.select({ id: schema.characters.id, profession: schema.characters.profession, knownRecipes: schema.characters.knownRecipes, skills: schema.characters.skills })
+        .from(schema.characters).where(sql`${schema.characters.alive} = true and ${schema.characters.profession} in ('cook', 'teacher')`);
+      const xpAt = (lvl: number) => Math.round(60 * Math.pow(lvl, 1.55));
+      for (const c of chars) {
+        if (c.profession === 'cook' && !c.knownRecipes.includes('hearty_stew')) await db.update(schema.characters).set({ knownRecipes: [...c.knownRecipes, 'hearty_stew'] }).where(eq(schema.characters.id, c.id));
+        if (c.profession === 'teacher') {
+          const sk = structuredClone(c.skills) as Record<string, { level: number; xp: number }>;
+          for (const [id, lvl] of Object.entries({ medicine: 2, carpentry: 1, electrical: 1 })) {
+            const cur = sk[id] ?? { level: 0, xp: 0 };
+            if (cur.level < lvl) sk[id] = { level: lvl, xp: Math.max(cur.xp, xpAt(lvl)) };
+          }
+          await db.update(schema.characters).set({ skills: sk as any }).where(eq(schema.characters.id, c.id));
+        }
+      }
+    },
+  },
 ];
 
 export async function applyPatches() {

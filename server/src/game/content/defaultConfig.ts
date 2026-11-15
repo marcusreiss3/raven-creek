@@ -13,8 +13,8 @@ export const defaultGameConfig = {
     startHour: 8,
   },
   needs: {
-    hungerPerHour: 3,
-    thirstPerHour: 4.5,
+    hungerPerHour: 7,
+    thirstPerHour: 8,
     sleepinessPerHour: 3,
     sleepRecoveryPerHour: 30,
     staminaRegenPerMinute: 8,

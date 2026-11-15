@@ -1,9 +1,9 @@
 /** Emblemas de facção (símbolos SVG no cliente). */
 export const FACTION_EMBLEMS = ['wolf', 'raven', 'axes', 'anchor', 'skull', 'radiation', 'biohazard', 'fist', 'eagle', 'wire', 'crown', 'flame', 'pine', 'wheat', 'cross', 'banner'];
 import { cropMultiplier } from './nature.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, schema, type Tx } from '../../db/index.js';
-import { charMod } from '../content/character.js';
+import { charMod, PROFESSIONS } from '../content/character.js';
 import { STRUCTURES } from '../content/structures.js';
 import { clamp } from '../rules/rng.js';
 import { assertCanAct, withCharacter } from './characters.js';
@@ -126,9 +126,13 @@ export async function processBaseProduction(hours: number) {
   const st = await db.select().from(schema.baseStructures);
   const { addItem } = await import('./inventory.js');
   const { clock } = await import('./config.js');
+  // plantações montadas por um agricultor produzem mais
+  const builders = [...new Set(st.filter((s) => s.kind === 'garden' && s.builtBy).map((s) => s.builtBy!))];
+  const farmers = new Set(builders.length ? (await db.select({ id: schema.characters.id }).from(schema.characters).where(and(inArray(schema.characters.id, builders), eq(schema.characters.profession, 'farmer')))).map((c) => c.id) : []);
   for (const s of st) {
     if (s.completeAt && s.completeAt > new Date()) continue;
-    const acc = Number(s.data.acc ?? 0) + hours * (s.kind === 'rain_collector' ? (['rain', 'storm'].includes(clock().weather) ? 1.5 : 0.25) : s.kind === 'garden' ? 0.12 * cropMultiplier() : 0);
+    const gardenMult = s.kind === 'garden' && s.builtBy && farmers.has(s.builtBy) ? (PROFESSIONS.find((p) => p.id === 'farmer')?.modifiers?.gardenYield ?? 3) : 1;
+    const acc = Number(s.data.acc ?? 0) + hours * (s.kind === 'rain_collector' ? (['rain', 'storm'].includes(clock().weather) ? 1.5 : 0.25) : s.kind === 'garden' ? 0.12 * cropMultiplier() * gardenMult : 0);
     if (acc >= 1) {
       const [store] = await db.select().from(schema.containers).where(and(eq(schema.containers.baseId, s.baseId), eq(schema.containers.kind, 'base_storage')));
       if (store) await db.transaction(async (tx) => addItem(tx, 'container', store.id, s.kind === 'garden' ? 'apple' : 'dirty_water', Math.floor(acc)));

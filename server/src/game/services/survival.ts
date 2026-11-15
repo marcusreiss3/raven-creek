@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { drink, smoke } from '../rules/addiction.js';
 import { schema, type Tx } from '../../db/index.js';
 import { charMod } from '../content/character.js';
@@ -10,12 +10,20 @@ import { assertCanAct, conditionsOf, withCharacter, withTwoCharacters, woundsOf 
 import { cfg, clock, itemDef } from './config.js';
 import { fail, gameLog } from './infra.js';
 import { addItem, carryInfo, consumeItem, hasTool as hasToolIn, itemsOf, transferItem, type CharRow, type ItemRow } from './inventory.js';
-import { notify, pushScene, pushSelf } from './realtime.js';
+import { isUserOnline, notify, pushScene, pushSelf } from './realtime.js';
 import { systemEmote } from './chat.js';
 
 const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 
+/** Professor ensina: quem está no mesmo lugar que um professor conectado aprende 25% mais rápido. */
+export async function teacherBonus(tx: Tx, ch: { id: number; locationId: string }) {
+  const t = await tx.select({ userId: schema.characters.userId }).from(schema.characters)
+    .where(and(eq(schema.characters.locationId, ch.locationId), eq(schema.characters.profession, 'teacher'), eq(schema.characters.alive, true), ne(schema.characters.id, ch.id)));
+  return t.some((x) => isUserOnline(x.userId)) ? 1.25 : 1;
+}
+
 async function giveXp(tx: Tx, ch: CharRow, skill: string, xp: number, key: string, maxLevel?: number) {
+  xp *= await teacherBonus(tx, ch);
   const r = grantXp(ch.skills, ch.xpLedger, skill, xp, key, Date.now(), cfg(), { profession: ch.profession, traits: ch.traits, intellect: ch.attributes.intellect ?? 4, maxLevelFromSource: maxLevel });
   ch.skills = r.skills; ch.xpLedger = r.ledger;
   await tx.update(schema.characters).set({ skills: r.skills, xpLedger: r.ledger }).where(eq(schema.characters.id, ch.id));

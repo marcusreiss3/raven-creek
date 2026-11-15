@@ -174,7 +174,8 @@ async function applyEffect(tx: Tx, s: CombatState, e: Effect, kills: Record<numb
     case 'xp': {
       const [ch] = await tx.select().from(schema.characters).where(eq(schema.characters.id, e.characterId));
       if (!ch?.alive) return;
-      const r = grantXp(ch.skills, ch.xpLedger, e.skill, e.amount, e.key, Date.now(), cfg(), { profession: ch.profession, traits: ch.traits, intellect: ch.attributes.intellect ?? 4 });
+      const { teacherBonus } = await import('./survival.js');
+      const r = grantXp(ch.skills, ch.xpLedger, e.skill, e.amount * (await teacherBonus(tx, ch)), e.key, Date.now(), cfg(), { profession: ch.profession, traits: ch.traits, intellect: ch.attributes.intellect ?? 4 });
       await tx.update(schema.characters).set({ skills: r.skills, xpLedger: r.ledger }).where(eq(schema.characters.id, ch.id));
       if (r.levelUp) notify(ch.userId, `Habilidade aprimorada: ${e.skill} agora no nível ${r.skills[e.skill].level}`, 'success');
       return;

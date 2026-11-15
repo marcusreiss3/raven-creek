@@ -35,3 +35,15 @@ describe('profissões e viagem', () => {
     expect(ta.toId).toBe(conn.fromId); expect(ta.fromId).toBe(conn.toId);
   });
 });
+
+import { teacherBonus } from '../src/game/services/survival.js';
+describe('classes de suporte', () => {
+  it('professor começa com 5 níveis e ensina quem está perto', async () => {
+    const t = await makePlayer({ profession: 'teacher' });
+    expect(t.character.skills.medicine.level).toBe(2);
+    const sum = Object.values(t.character.skills).reduce((a: number, s: any) => a + s.level, 0);
+    expect(sum).toBeGreaterThanOrEqual(5);
+    const other = await makePlayer({ locationId: t.character.locationId });
+    expect(await teacherBonus(db, other.character)).toBe(1); // professor desconectado não conta
+  });
+});

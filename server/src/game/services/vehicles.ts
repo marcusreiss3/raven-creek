@@ -153,7 +153,9 @@ export async function craft(characterId: number, recipeId: string) {
     }
     const waste = charMod(ch.profession, ch.traits, 'buildMaterial');
     for (const inp of r!.inputs) await consumeByDef(tx, 'character', ch.id, inp.itemId, Math.max(1, Math.round(inp.qty * (r!.skill === 'carpentry' ? waste : 1))));
-    await addItem(tx, 'character', ch.id, r!.output.itemId, r!.output.qty);
+    // cozinheiro: toda receita de comida rende o dobro
+    const yieldMult = r!.skill === 'cooking' && itemDef(r!.output.itemId)?.category === 'food' ? charMod(ch.profession, ch.traits, 'mealYield') : 1;
+    await addItem(tx, 'character', ch.id, r!.output.itemId, Math.max(1, Math.round(r!.output.qty * yieldMult)));
     await tx.update(schema.characters).set({ needs: { ...ch.needs, energy: Math.max(0, ch.needs.energy - 2) } }).where(eq(schema.characters.id, ch.id));
     await giveXp(tx, ch, r!.skill, r!.xp, `craft_${r!.id}`);
     await gameLog(tx, ch.id, 'craft', `Fabricou: ${r!.name}.`);
