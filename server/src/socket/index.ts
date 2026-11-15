@@ -85,7 +85,9 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
   if (!ch) throw new GameError('Crie um personagem.');
   const c = ch.id; const p = payload;
   // Dia 1: as ações do mundo ficam travadas; tudo acontece pelo celular, pelo chat do local e pelos combates.
-  if (isPrologueMember(c) && !PROLOGUE_ALLOWED.has(type) && !(FREE_ALLOWED.has(type) && (await prologueFreeIdle(c)))) {
+  // Parar de seguir alguém nunca fica travado (senão quem ficou para trás não consegue mais andar).
+  const unfollow = type === 'follow' && !p?.targetId;
+  if (isPrologueMember(c) && !unfollow && !PROLOGUE_ALLOWED.has(type) && !(FREE_ALLOWED.has(type) && (await prologueFreeIdle(c)))) {
     throw new GameError(FREE_ALLOWED.has(type) ? 'Agora não: termine o que está acontecendo (ou saia do trabalho para andar pelo mapa).' : 'No Dia 1, suas escolhas acontecem pelo celular.', 'prologue');
   }
   switch (type) {

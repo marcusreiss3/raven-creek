@@ -8,6 +8,7 @@ import { useGame } from '../../lib/store';
 import { useIsMobile } from '../../lib/mobile';
 import { usePhone, loadPhone, leaveWork, type PEvent } from '../../lib/prologue';
 import { GameIcon } from '../../components/GameIcon';
+import { action } from '../../lib/socket';
 import { audio } from '../../lib/audio';
 import { Bar, Confirm, Toasts } from '../../components/ui';
 import { ExitsPanel, SceneStage } from '../Scene';
@@ -70,9 +71,16 @@ function LeaveWorkButton({ compact }: { compact?: boolean }) {
 /** Para onde ir (só para quem saiu do trabalho e não está no meio de um evento). */
 function FreeExits() {
   const me = usePhone((s) => s.me);
+  const following = useGame((s) => !!s.self?.followingId);
   if (!me?.free) return null;
-  if (!me.freeIdle) return <div className="px-5 py-2 text-[13px] text-amber-450 bg-black/30 border-b border-black">Algo está acontecendo aqui. Resolva antes de seguir viagem.</div>;
-  return <div className="border-b border-black bg-[#0e0f0a] max-h-[34%] overflow-y-auto"><ExitsPanel /></div>;
+  const stop = following && (
+    <div className="px-5 py-2 flex items-center gap-3 text-[13px] text-ink-200 bg-black/30 border-b border-black">
+      Você está acompanhando alguém: vai junto quando a pessoa sair daqui.
+      <button className="btn !min-h-8 !py-1" onClick={() => action('follow', { targetId: null })}><GameIcon name="follow" size={16} />Parar de seguir</button>
+    </div>
+  );
+  if (!me.freeIdle) return <>{stop}<div className="px-5 py-2 text-[13px] text-amber-450 bg-black/30 border-b border-black">Algo está acontecendo aqui. Resolva antes de seguir viagem.</div></>;
+  return <>{stop}<div className="border-b border-black bg-[#0e0f0a] max-h-[34%] overflow-y-auto"><ExitsPanel /></div></>;
 }
 
 function FeedItem({ e }: { e: PEvent }) {

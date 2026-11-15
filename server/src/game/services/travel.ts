@@ -55,7 +55,14 @@ export async function previewTravel(characterId: number, toId: string) {
 export async function startTravel(characterId: number, toId: string, opts: { vehicle?: boolean } = {}) {
   return withCharacter(characterId, async (tx, ch) => {
     assertCanAct(ch);
-    if (ch.followingId) fail('Você está seguindo outra pessoa. Pare de seguir para escolher o caminho.');
+    if (ch.followingId) {
+      // Quem você seguia já não está aqui (foi embora sem você): deixa de seguir e escolhe o caminho sozinho.
+      const [leader] = await tx.select({ locationId: schema.characters.locationId, state: schema.characters.state, alive: schema.characters.alive }).from(schema.characters).where(eq(schema.characters.id, ch.followingId));
+      if (!leader || !leader.alive || leader.locationId !== ch.locationId || leader.state === 'traveling') {
+        await tx.update(schema.characters).set({ followingId: null }).where(eq(schema.characters.id, ch.id));
+        ch.followingId = null;
+      } else fail('Você está seguindo outra pessoa. Pare de seguir para escolher o caminho.');
+    }
     const conn = findConnection(ch.locationId, toId);
     if (!conn) fail('Não há caminho direto até lá. Não é possível teleportar.');
     if (conn!.blocked) fail(`Caminho bloqueado: ${conn!.blockedReason ?? 'passagem obstruída'}.`);
