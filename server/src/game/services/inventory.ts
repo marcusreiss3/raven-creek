@@ -1,0 +1,130 @@
+import { noteInfo } from './stories.js';
+import { and, eq, gte, sql } from 'drizzle-orm';
+import { db, schema, type Tx } from '../../db/index.js';
+import { charMod } from '../content/character.js';
+import { EQUIP_SLOTS } from '../content/items.js';
+import { cfg, itemDef } from './config.js';
+import { fail } from './infra.js';
+
+export type ItemRow = typeof schema.items.$inferSelect;
+export type CharRow = typeof schema.characters.$inferSelect;
+
+export async function itemsOf(tx: Tx, ownerType: string, ownerId: string | number) {
+  return tx.select().from(schema.items).where(and(eq(schema.items.ownerType, ownerType), eq(schema.items.ownerId, String(ownerId)))).orderBy(schema.items.id);
+}
+export const itemWeight = (i: ItemRow) => (itemDef(i.defId)?.weight ?? 0) * i.quantity;
+
+export function carryInfo(items: ItemRow[], ch: Pick<CharRow, 'attributes' | 'profession' | 'traits'>) {
+  const weight = items.reduce((s, i) => s + (i.slot === 'back' ? (itemDef(i.defId)?.weight ?? 0) * 0.5 : itemWeight(i)), 0);
+  const bag = items.find((i) => i.slot === 'back');
+  const c = cfg().carry;
+  const capacity = c.baseCapacity + (ch.attributes.strength ?? 4) * c.strengthBonus + (bag ? Number(itemDef(bag.defId)?.props.capacity ?? 0) : 0) + charMod(ch.profession, ch.traits, 'carryBonus', 0);
+  return { weight: Math.round(weight * 100) / 100, capacity, ratio: weight / capacity };
+}
+
+export function equipped(items: ItemRow[]) {
+  const out: Record<string, ItemRow | undefined> = {};
+  for (const s of EQUIP_SLOTS) out[s] = items.find((i) => i.slot === s);
+  return out;
+}
+/** Proteção por região a partir das roupas equipadas (p: contra golpes; b: balística). Não acumula linearmente. */
+export function armorByRegion(items: ItemRow[]) {
+  const out: Record<string, { p: number; b: number }> = {};
+  for (const i of items) {
+    if (!i.slot) continue; const d = itemDef(i.defId); if (!d || d.category !== 'clothing') continue;
+    const wear = d.durabilityMax ? Math.max(0.3, i.durability / d.durabilityMax) : 1;
+    for (const [r, v] of Object.entries((d.props.protection ?? {}) as Record<string, number>)) {
+      const cur = out[r] ?? { p: 0, b: 0 }; cur.p = 1 - (1 - cur.p) * (1 - v * wear); out[r] = cur;
+    }
+    for (const [r, v] of Object.entries((d.props.ballistic ?? {}) as Record<string, number>)) {
+      const cur = out[r] ?? { p: 0, b: 0 }; cur.b = 1 - (1 - cur.b) * (1 - v * wear); out[r] = cur;
+    }
+  }
+  return out;
+}
+export const insulationOf = (items: ItemRow[]) => Math.min(1, items.filter((i) => i.slot).reduce((s, i) => s + Number(itemDef(i.defId)?.props.insulation ?? 0), 0));
+export function hasTool(items: ItemRow[], tool: string) {
+  return items.some((i) => {
+    const p = itemDef(i.defId)?.props ?? {};
+    if (tool === 'fire') return !!p.fire;
+    if (tool === 'blade') return p.skill === 'blade';
+    if (tool === 'light') return !!p.light;
+    if (tool === 'fishing') return !!p.fishing;
+    return Array.isArray(p.tool) && p.tool.includes(tool);
+  });
+}
+
+/** Adiciona itens a um dono, empilhando quando possível. */
+export async function addItem(tx: Tx, ownerType: string, ownerId: string | number, defId: string, qty = 1, extra: { durability?: number; data?: Record<string, any> } = {}) {
+  const d = itemDef(defId); if (!d) fail(`Item desconhecido: ${defId}`);
+  const def = d!;
+  let remaining = qty;
+  if (def.stackable) {
+    const stacks = (await itemsOf(tx, ownerType, ownerId)).filter((i) => i.defId === defId && !i.slot && i.quantity < def.maxStack);
+    for (const s of stacks) {
+      if (remaining <= 0) break;
+      const add = Math.min(remaining, def.maxStack - s.quantity);
+      await tx.update(schema.items).set({ quantity: s.quantity + add, version: s.version + 1 }).where(eq(schema.items.id, s.id));
+      remaining -= add;
+    }
+  }
+  const created: ItemRow[] = [];
+  while (remaining > 0) {
+    const q = def.stackable ? Math.min(remaining, def.maxStack) : 1;
+    const durability = extra.durability ?? (def.durabilityMax ? Math.round(def.durabilityMax * (0.5 + Math.random() * 0.5)) : 0);
+    const [row] = await tx.insert(schema.items).values({ defId, quantity: q, durability, ownerType, ownerId: String(ownerId), data: extra.data ?? {} }).returning();
+    created.push(row); remaining -= q;
+  }
+  return created;
+}
+
+/** Consome N unidades de um item específico, de forma atômica (impede uso duplo simultâneo). */
+export async function consumeItem(tx: Tx, itemId: number, ownerType: string, ownerId: string | number, qty = 1) {
+  const [row] = await tx.update(schema.items).set({ quantity: sql`${schema.items.quantity} - ${qty}`, version: sql`${schema.items.version} + 1` })
+    .where(and(eq(schema.items.id, itemId), eq(schema.items.ownerType, ownerType), eq(schema.items.ownerId, String(ownerId)), gte(schema.items.quantity, qty)))
+    .returning();
+  if (!row) fail('Esse item não está mais disponível.', 'item_gone');
+  if (row.quantity <= 0) await tx.delete(schema.items).where(eq(schema.items.id, itemId));
+  return row;
+}
+/** Consome por tipo (receitas/construção) — várias pilhas se necessário. */
+export async function consumeByDef(tx: Tx, ownerType: string, ownerId: string | number, defId: string, qty: number) {
+  const stacks = (await itemsOf(tx, ownerType, ownerId)).filter((i) => i.defId === defId && !i.slot);
+  const total = stacks.reduce((s, i) => s + i.quantity, 0);
+  if (total < qty) fail(`Faltam materiais: ${itemDef(defId)?.name ?? defId} (${total}/${qty}).`);
+  let left = qty;
+  for (const s of stacks) { if (left <= 0) break; const take = Math.min(left, s.quantity); await consumeItem(tx, s.id, ownerType, ownerId, take); left -= take; }
+}
+export function countDef(items: ItemRow[], defId: string) { return items.filter((i) => i.defId === defId && !i.slot).reduce((s, i) => s + i.quantity, 0); }
+
+/** Transfere um item entre donos atomicamente (pegar do chão, guardar em contêiner, entregar). */
+export async function transferItem(tx: Tx, itemId: number, from: { type: string; id: string | number }, to: { type: string; id: string | number }, qty?: number) {
+  const [it] = await tx.select().from(schema.items).where(and(eq(schema.items.id, itemId), eq(schema.items.ownerType, from.type), eq(schema.items.ownerId, String(from.id)))).for('update');
+  if (!it) fail('Alguém já pegou esse item.', 'item_gone');
+  const amount = Math.min(qty ?? it!.quantity, it!.quantity);
+  if (amount < it!.quantity) {
+    await tx.update(schema.items).set({ quantity: it!.quantity - amount, version: it!.version + 1 }).where(eq(schema.items.id, itemId));
+    const [n] = await tx.insert(schema.items).values({ defId: it!.defId, quantity: amount, durability: it!.durability, ownerType: to.type, ownerId: String(to.id), data: it!.data }).returning();
+    return n;
+  }
+  const [moved] = await tx.update(schema.items).set({ ownerType: to.type, ownerId: String(to.id), slot: null, version: it!.version + 1 })
+    .where(and(eq(schema.items.id, itemId), eq(schema.items.version, it!.version))).returning();
+  if (!moved) fail('Alguém já pegou esse item.', 'item_gone');
+  return moved;
+}
+
+export function describeItem(i: ItemRow) {
+  const d = itemDef(i.defId);
+  return {
+    id: i.id, defId: i.defId, name: d?.name ?? i.defId, category: d?.category ?? 'misc', quantity: i.quantity, weight: d?.weight ?? 0,
+    durability: i.durability, durabilityMax: d?.durabilityMax ?? 0, slot: i.slot, equipSlot: d?.equipSlot ?? null, icon: d?.icon ?? 'generic',
+    rarity: d?.rarity ?? 'common', description: d?.description ?? '', props: publicProps(d?.props ?? {}), data: { ammo: i.data?.ammo ?? undefined },
+    note: i.defId === 'note' ? noteInfo(i.data) : undefined,
+    freshness: Number(d?.props?.perishHours ?? 0) > 0 ? Math.max(0, Math.round(100 * (1 - Number(i.data?.age ?? 0) / Number(d!.props.perishHours)))) : undefined,
+  };
+}
+function publicProps(p: Record<string, any>) {
+  const keep = ['weaponType', 'skill', 'damage', 'range', 'apCost', 'twoHanded', 'ammoType', 'magSize', 'protection', 'ballistic', 'capacity', 'use', 'hunger', 'thirst', 'light', 'radio', 'fuel', 'insulation', 'tool', 'noise', 'fuelMinutes', 'perishHours', 'fishing', 'fire', 'smokable', 'alcohol', 'doses'];
+  const o: Record<string, any> = {}; for (const k of keep) if (p[k] !== undefined) o[k] = p[k]; return o;
+}
+export { db };

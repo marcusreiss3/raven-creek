@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+server/uploads/
+*.log
+.dados-postgres/
+cenarios-baixados/
+docs/screenshots/
+raven-creek-url.txt
+.env.*
+!.env.example

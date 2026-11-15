@@ -1,0 +1,1 @@
+ALTER TABLE "characters" ADD COLUMN "approved" boolean DEFAULT true NOT NULL;

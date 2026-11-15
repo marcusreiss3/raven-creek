@@ -1,0 +1,1 @@
+ALTER TABLE "factions" ALTER COLUMN "emblem" SET DEFAULT 'banner';
