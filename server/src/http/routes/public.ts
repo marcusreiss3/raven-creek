@@ -130,9 +130,13 @@ publicRouter.get('/characters/me', requireUser, async (req, res) => {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 export async function processPortrait(buf: Buffer) {
-  if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_MAGIC)) throw new Error('O arquivo precisa ser um PNG.');
+  // PNG (de preferência com fundo transparente), JPG ou WEBP; tudo vira PNG limpo.
+  const looksPng = buf.length >= 8 && buf.subarray(0, 8).equals(PNG_MAGIC);
+  const looksJpg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  const looksWebp = buf.length >= 12 && buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP';
+  if (!looksPng && !looksJpg && !looksWebp) throw new Error('Envie uma imagem PNG, JPG ou WEBP.');
   const meta = await sharp(buf, { limitInputPixels: 4096 * 4096 }).metadata();
-  if (meta.format !== 'png') throw new Error('O arquivo precisa ser um PNG.');
+  if (!['png', 'jpeg', 'webp'].includes(meta.format ?? '')) throw new Error('Envie uma imagem PNG, JPG ou WEBP.');
   if (!meta.width || !meta.height || meta.width < 200 || meta.height < 250) throw new Error('Imagem pequena demais (mínimo 200×250 px).');
   if (meta.width > 4096 || meta.height > 4096) throw new Error('Imagem grande demais (máximo 4096×4096 px).');
   const out = await sharp(buf).ensureAlpha().resize({ height: 1200, width: 1000, fit: 'inside', withoutEnlargement: true }).png({ compressionLevel: 9 }).toBuffer();
@@ -141,7 +145,7 @@ export async function processPortrait(buf: Buffer) {
 publicRouter.post('/characters/me/portrait', requireUser, upload.single('portrait'), async (req, res) => {
   const ch = await activeCharacter(req.user!.id);
   if (!ch) return res.status(400).json({ error: 'Crie um personagem primeiro.' });
-  if (!req.file) return res.status(400).json({ error: 'Envie um arquivo PNG.' });
+  if (!req.file) return res.status(400).json({ error: 'Envie uma imagem (PNG, JPG ou WEBP).' });
   try {
     const { out, hasAlpha } = await processPortrait(req.file.buffer);
     const dir = path.resolve(env.uploadDir, 'portraits'); await fs.mkdir(dir, { recursive: true });

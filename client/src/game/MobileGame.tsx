@@ -1,3 +1,4 @@
+import { useHud, ADVANCED_PANELS } from '../lib/hud';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, LogOut, Wrench } from 'lucide-react';
 import { useGame, type Panel } from '../lib/store';
@@ -241,10 +242,11 @@ const MORE: { p: Panel; icon: string; label: string }[] = [
 ];
 function MoreSheet({ onClose, onPick }: { onClose: () => void; onPick: (p: Panel) => void }) {
   const { user, panel } = useGame();
+  const simpleHud = useHud((h) => h.simple);
   return (
     <Modal title="Mais" onClose={onClose}>
       <div className="grid grid-cols-3 gap-2">
-        {MORE.map((m) => (
+        {MORE.filter((m) => !simpleHud || !ADVANCED_PANELS.has(m.p)).map((m) => (
           <button key={m.p} onClick={() => onPick(m.p)} aria-current={panel === m.p ? 'page' : undefined}
             className={`flex flex-col items-center justify-center gap-1.5 min-h-[84px] border border-black bg-[#101109]/70 active:bg-black/50 ${panel === m.p ? 'text-amber-450 !border-amber-450/60' : 'text-ink-100'}`}>
             <GameIcon name={m.icon} size={28} className={panel === m.p ? '' : 'text-tape'} />

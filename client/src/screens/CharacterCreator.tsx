@@ -408,7 +408,7 @@ function PhotoStep({ created, portrait, adjust, setAdjust, warning, fileRef, upl
         {!created ? <p className="text-[15px] text-amber-450">Registre o sobrevivente na etapa anterior para poder enviar a foto.</p> : (
           <>
             <p className="text-[15px] text-ink-200 leading-relaxed">Use um PNG com <b>fundo transparente</b>, do peito ou da cintura para cima. Mínimo de 200 por 250 px, até 5 MB. O ideal é 800 por 1200 px.</p>
-            <input ref={fileRef} type="file" accept="image/png" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
             <button className="btn mt-4 !min-h-[48px]" onClick={() => fileRef.current?.click()}><GameIcon name="photo" size={19} />{portrait ? 'Trocar foto' : 'Escolher foto'}</button>
             {warning && <p role="status" className="text-[13.5px] text-amber-450 mt-2">{warning}</p>}
             {portrait && (

@@ -309,6 +309,37 @@ export async function togglePause(characterId: number, pause?: boolean) {
   }));
 }
 /**
+ * Dar meia-volta: volta para o lugar de onde saiu, pelo mesmo caminho (leva o tempo que já tinha andado).
+ * Quem conduz o grupo leva todos junto; quem acompanhava alguém deixa de seguir e volta sozinho.
+ */
+export async function turnBack(characterId: number) {
+  const [t] = await db.select().from(schema.travels).where(and(eq(schema.travels.characterId, characterId), inArray(schema.travels.status, ['active', 'paused'])));
+  if (!t) fail('Você não está numa caminhada que possa interromper.');
+  return withLock(`travel:${t!.groupId}`, () => db.transaction(async (tx) => {
+    const rows = await groupRows(tx, t!.groupId); const leader = rows.find((r) => r.isLeader) ?? rows[0];
+    if (!leader || !['active', 'paused'].includes(leader.status)) fail('Agora não dá para dar meia-volta.');
+    const now = Date.now();
+    const [me] = await tx.select().from(schema.characters).where(eq(schema.characters.id, characterId));
+    const who = me ? `${me.firstName} ${me.lastName}` : 'Alguém';
+    const mine = rows.find((r) => r.characterId === characterId)!;
+    const back = (r: TravelRow) => ({ fromId: r.toId, toId: r.fromId, durationMs: Math.max(5000, Math.min(r.durationMs, elapsedOf(r, now))), elapsedMs: 0, lastProgressAt: new Date(now), status: 'active', encounter: null });
+    if (!mine.isLeader && rows.length > 1) {
+      const gid = randomUUID();
+      await tx.update(schema.travels).set({ ...back(mine), groupId: gid, isLeader: true }).where(eq(schema.travels.id, mine.id));
+      await tx.update(schema.characters).set({ followingId: null }).where(eq(schema.characters.id, characterId));
+      if (me) { leaveTravelRoom(me.userId, t!.groupId); joinTravelRoom(me.userId, gid); }
+      await travelMessage(t!.groupId, `${who} dá meia-volta e volta sozinho(a).`);
+      await travelMessage(gid, `${who} deixa o grupo e volta para ${getLocation(mine.fromId)?.name}.`);
+      for (const r of rows) pushSelf(r.characterId);
+      return { ok: true, detached: true };
+    }
+    for (const r of rows) await tx.update(schema.travels).set(back(r)).where(eq(schema.travels.id, r.id));
+    await travelMessage(t!.groupId, `${who} dá meia-volta: o grupo volta para ${getLocation(leader.fromId)?.name}.`);
+    for (const r of rows) pushSelf(r.characterId);
+    return { ok: true };
+  }));
+}
+/**
  * Acompanhar alguém avistado na estrada: o seu grupo (ou só você, se você estava acompanhando outra pessoa)
  * passa a fazer o mesmo trajeto, no mesmo ritmo e para o mesmo destino da pessoa escolhida.
  */

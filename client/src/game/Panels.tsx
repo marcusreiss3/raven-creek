@@ -1,3 +1,4 @@
+import { useHud } from '../lib/hud';
 import { Fragment, useEffect, useState } from 'react';
 import { GameIcon, FactionEmblem, EMBLEMS, itemIcon } from '../components/GameIcon';
 import { useGame } from '../lib/store';
@@ -189,7 +190,8 @@ export function CharacterPanel({ onClose }: { onClose: () => void }) {
       <Section title="História"><textarea aria-label="História" className="input h-32 text-[14.5px]" value={profile.backstory} onChange={(e) => setProfile({ ...profile, backstory: e.target.value })} /></Section>
       <button className="btn" onClick={() => api('/characters/me/profile', { method: 'PUT', body: profile }).then(() => useGame.getState().toast('Perfil salvo.', 'success'))}>Salvar perfil</button>
       <Section title="Retrato">
-        <input aria-label="Enviar retrato (PNG)" type="file" accept="image/png" className="text-[13px] file:btn file:mr-3" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const fd = new FormData(); fd.append('portrait', f); try { const r = await api('/characters/me/portrait', { form: fd }); useGame.getState().toast(r.warning ?? 'Retrato atualizado.', r.warning ? 'warn' : 'success'); } catch (err: any) { useGame.getState().toast(err.message, 'warn'); } }} />
+        <p className="text-[13px] text-ink-300 mb-1.5">PNG com fundo transparente fica melhor no cenário; JPG e WEBP também funcionam.</p>
+        <input aria-label="Enviar retrato" type="file" accept="image/png,image/jpeg,image/webp" className="text-[13px] file:btn file:mr-3" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const fd = new FormData(); fd.append('portrait', f); try { const r = await api('/characters/me/portrait', { form: fd }); useGame.getState().toast(r.warning ?? 'Retrato atualizado.', r.warning ? 'warn' : 'success'); } catch (err: any) { useGame.getState().toast(err.message, 'warn'); } }} />
         {(['scale', 'x', 'y'] as const).map((k) => <label key={k} className="block mt-2"><span className="label">{k === 'scale' ? 'Escala' : k === 'x' ? 'Horizontal' : 'Vertical'}: {adjust[k]}</span><input type="range" className="w-full accent-amber-600" min={k === 'scale' ? 0.5 : -40} max={k === 'scale' ? 1.8 : 40} step={k === 'scale' ? 0.01 : 1} value={adjust[k]} onChange={(e) => setAdjust({ ...adjust, [k]: Number(e.target.value) })} onMouseUp={() => api('/characters/me/portrait-adjust', { method: 'PUT', body: adjust })} /></label>)}
       </Section>
     </Drawer>
@@ -212,7 +214,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <dl className="text-[14px] text-ink-200 grid grid-cols-[64px_1fr] gap-y-1.5 items-center">{[['E', 'Vasculhar'], ['I', 'Mochila'], ['B', 'Ficha médica'], ['K', 'Habilidades'], ['C', 'Bancada'], ['G', 'Projetos'], ['H', 'Base'], ['F', 'Facção'], ['M', 'Mapa'], ['J', 'Diário'], ['P', 'Personagem'], ['O', 'Opções'], ['Enter', 'Escrever no chat'], ['Esc', 'Fechar painel']].map(([k, v]) => <Fragment key={k}><dt><kbd className="px-1.5 py-0.5 text-[12.5px] font-bold bg-[#101109] border border-ink-600 text-amber-450">{k}</kbd></dt><dd>{v}</dd></Fragment>)}</dl>
       </Section>
       </div>
+      <HudSection />
       <Section title="Outros"><a className="btn" href="#/memorial">Memorial</a></Section>
     </Drawer>
+  );
+}
+
+function HudSection() {
+  const { simple, setSimple } = useHud();
+  return (
+    <Section title="Interface">
+      <label className="flex items-start gap-2.5 text-[14.5px] text-ink-100 cursor-pointer">
+        <input type="checkbox" className="mt-1" checked={simple} onChange={(e) => setSimple(e.target.checked)} />
+        <span>Interface simples<span className="block text-[12.5px] text-ink-400">Esconde os botões avançados (habilidades, bancada, base, projetos, facção e diário). Os atalhos de teclado continuam funcionando, e dá para voltar aqui quando quiser.</span></span>
+      </label>
+    </Section>
   );
 }

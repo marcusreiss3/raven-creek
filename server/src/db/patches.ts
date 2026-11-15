@@ -164,6 +164,31 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       await db.execute(sql`update assets set path = regexp_replace(path, '\\.png$', '.webp') where kind = 'scene' and path like '/assets/scenes/%.png'`);
     },
   },
+  {
+    version: 14, name: 'Policiais e militares com arma de serviço (pistola e fuzil carregados)',
+    run: async () => {
+      const rifle = ITEM_DEFS.find((d) => d.id === 'service_rifle');
+      if (rifle) await db.insert(schema.itemDefs).values(itemRow(rifle) as any).onConflictDoNothing();
+      // quem já existe também recebe a arma da profissão (se ainda não tiver arma de fogo)
+      const kits: Record<string, { gun: string; mag: number; ammo: string; qty: number }> = {
+        police: { gun: 'pistol_9mm', mag: 15, ammo: 'ammo_9mm', qty: 15 },
+        soldier: { gun: 'service_rifle', mag: 10, ammo: 'ammo_308', qty: 10 },
+      };
+      const chars = await db.select({ id: schema.characters.id, profession: schema.characters.profession }).from(schema.characters)
+        .where(sql`${schema.characters.alive} = true and ${schema.characters.profession} in ('police', 'soldier')`);
+      const guns = ITEM_DEFS.filter((d) => (d.props as any)?.weaponType === 'ranged').map((d) => d.id);
+      for (const c of chars) {
+        const k = kits[c.profession]; if (!k) continue;
+        const owned = await db.select({ defId: schema.items.defId, slot: schema.items.slot }).from(schema.items)
+          .where(sql`${schema.items.ownerType} = 'character' and ${schema.items.ownerId} = ${String(c.id)}`);
+        if (owned.some((i) => guns.includes(i.defId))) continue;
+        const handFree = !owned.some((i) => i.slot === 'primary');
+        const dmax = ITEM_DEFS.find((d) => d.id === k.gun)?.durabilityMax ?? 100;
+        await db.insert(schema.items).values({ defId: k.gun, quantity: 1, durability: Math.round(dmax * 0.8), ownerType: 'character', ownerId: String(c.id), slot: handFree ? 'primary' : null, data: { ammo: k.mag } });
+        await db.insert(schema.items).values({ defId: k.ammo, quantity: k.qty, durability: 0, ownerType: 'character', ownerId: String(c.id), data: {} });
+      }
+    },
+  },
 ];
 
 export async function applyPatches() {

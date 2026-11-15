@@ -1,3 +1,4 @@
+import { useHud, ADVANCED_PANELS } from '../lib/hud';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LogOut, Wrench } from 'lucide-react';
 import { useGame, type Panel } from '../lib/store';
@@ -47,7 +48,9 @@ export function TopBar() {
   if (!self) return null;
   const c = clock ?? self.clock;
   const needs = buildNeeds(self);
+  const simpleHud = useHud((h) => h.simple);
   const btn = (p: Panel, icon: string, label: string, key: string) => {
+    if (simpleHud && ADVANCED_PANELS.has(p)) return null;
     const on = panel === p;
     return (
       <Tip key={p} text={`${label} (${key})`}>

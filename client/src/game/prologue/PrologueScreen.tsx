@@ -19,6 +19,7 @@ import { CombatScreen } from '../Combat';
 import { InventoryPanel } from '../Inventory';
 import { BodyPanel } from '../Body';
 import { CharacterMenu, GameModals } from '../GameScreen';
+import { CharacterPanel } from '../Panels';
 import type { SceneChar } from '../../lib/types';
 import { Phone, onPhone } from './Phone';
 import { AskCard, useNow } from './AskCard';
@@ -49,6 +50,7 @@ function TopStrip({ compact }: { compact?: boolean }) {
         {me?.free && <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'map' })} aria-label="Mapa"><GameIcon name="map" size={17} />{!compact && 'Mapa'}</button>}
         <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'inventory' })} aria-label="Inventário"><GameIcon name="inventory" size={17} />{!compact && 'Inventário'}</button>
         <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'body' })} aria-label="Corpo"><GameIcon name="body" size={17} />{!compact && 'Corpo'}</button>
+        <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'character' })} aria-label="Personagem: aparência, retrato e história"><GameIcon name="character" size={17} />{!compact && 'Personagem'}</button>
         {user && user.role !== 'player' && <a href="#/admin" className="btn !px-2.5 !min-h-[36px] text-amber-450" aria-label="Painel administrativo" title="Painel administrativo"><GameIcon name="admin" size={17} />{!compact && 'Admin'}</a>}
       </div>
       {left !== null && !compact && <div className="text-[12.5px] text-ink-300 tabular-nums shrink-0" title="Tempo até o fim do Dia 1"><GameIcon name="clock" size={14} className="inline -mt-0.5 mr-1" />{Math.floor(left / 60)}h{String(left % 60).padStart(2, '0')}</div>}
@@ -143,7 +145,7 @@ export function PrologueScreen() {
 function Panels() {
   const { panel, set } = useGame();
   const close = () => set({ panel: null });
-  return <>{panel === 'inventory' && <InventoryPanel onClose={close} />}{panel === 'body' && <BodyPanel onClose={close} />}{panel === 'map' && <MapPanel onClose={close} />}</>;
+  return <>{panel === 'inventory' && <InventoryPanel onClose={close} />}{panel === 'body' && <BodyPanel onClose={close} />}{panel === 'map' && <MapPanel onClose={close} />}{panel === 'character' && <CharacterPanel onClose={close} />}</>;
 }
 
 function PrologueDesktop() {

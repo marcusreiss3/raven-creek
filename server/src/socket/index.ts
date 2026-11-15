@@ -19,7 +19,7 @@ import { buildScene, getLocation } from '../game/services/world.js';
 import { localHistory, onRetune, privateHistory, sendChat } from '../game/services/chat.js';
 import * as survival from '../game/services/survival.js';
 import { startExplore } from '../game/services/explore.js';
-import { decideEncounter, follow, joinTravel, previewTravel, startTravel, togglePause } from '../game/services/travel.js';
+import { decideEncounter, follow, joinTravel, previewTravel, startTravel, togglePause, turnBack } from '../game/services/travel.js';
 import { attackCharacter, combatAction, getCombatView, joinCombat } from '../game/services/combat.js';
 import * as bases from '../game/services/bases.js';
 import * as vehicles from '../game/services/vehicles.js';
@@ -37,7 +37,7 @@ const id = z.number().int().positive();
 const actionSchemas = {
   explore: z.object({}), rest: z.object({}), sleep: z.object({}), wake: z.object({}),
   travel: z.object({ toId: z.string(), vehicle: z.boolean().optional() }), travel_preview: z.object({ toId: z.string() }),
-  travel_decide: z.object({ choice: z.enum(['fight', 'sneak', 'retreat', 'detour']) }), travel_pause: z.object({ pause: z.boolean().optional() }), travel_join: z.object({ targetId: id }),
+  travel_decide: z.object({ choice: z.enum(['fight', 'sneak', 'retreat', 'detour']) }), travel_pause: z.object({ pause: z.boolean().optional() }), travel_back: z.object({}), travel_join: z.object({ targetId: id }),
   projects_list: z.object({}).optional(), project_deliver: z.object({ projectId: z.string(), itemId: z.string().optional() }), project_work: z.object({ projectId: z.string() }),
   project_claim: z.object({}).optional(), project_power: z.object({ on: z.boolean() }),
   fire_light: z.object({ itemId: id }), fire_out: z.object({}).optional(), hunt: z.object({}).optional(), fish: z.object({}).optional(),
@@ -107,6 +107,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'travel_preview': return previewTravel(c, p.toId);
     case 'travel_decide': return decideEncounter(c, p.choice);
     case 'travel_pause': return togglePause(c, p.pause);
+    case 'travel_back': return turnBack(c);
     case 'travel_join': return joinTravel(c, p.targetId);
     case 'projects_list': return listProjects(c);
     case 'project_deliver': return deliverMaterials(c, p.projectId, p.itemId);
@@ -224,7 +225,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
   }
 }
 /** Dia 1: quem saiu do trabalho (e não está no meio de um evento) pode andar pelo mapa. */
-const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_join', 'follow']);
+const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow']);
 const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'give', 'combat', 'combat_view', 'tutorial', 'block_user', 'unblock_user', 'report', 'set_frequency']);
 async function blockedIds(userId: number) { return (await db.select().from(schema.userBlocks).where(eq(schema.userBlocks.userId, userId))).map((b) => b.blockedUserId); }
 

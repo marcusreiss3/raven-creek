@@ -17,6 +17,8 @@ import { isStaffRole, serverStatus } from './serverStatus.js';
 import { isPrologueMember } from './prologue.js';
 
 export const SPAWN_LOCATION = 'rc_main_street';
+/** Onde cada profissão começa, quando não é a Rua Principal. */
+export const SPAWN_BY_PROFESSION: Record<string, string> = { doctor: 'rc_hospital_lobby' };
 
 export const characterInput = z.object({
   firstName: z.string().trim().min(2).max(24), lastName: z.string().trim().min(2).max(24), age: z.number().int().min(18).max(85),
@@ -61,7 +63,7 @@ export async function createCharacter(userId: number, raw: unknown) {
     const [ch] = await tx.insert(schema.characters).values({
       approved,
       userId, firstName: input.firstName, lastName: input.lastName, age: input.age, appearance: input.appearance, backstory: input.backstory,
-      profession: prof.id, traits: withAgeTrait(traits, input.age), attributes: input.attributes, locationId: SPAWN_LOCATION,
+      profession: prof.id, traits: withAgeTrait(traits, input.age), attributes: input.attributes, locationId: SPAWN_BY_PROFESSION[prof.id] ?? SPAWN_LOCATION,
       needs: { hunger: 15, thirst: 15, sleepiness: 10, stamina: 100, energy: 100, stress: 20, bodyTemp: 37, blood: 100, boredom: 0, vitality: 100 },
       skills: initialSkills(prof.skills, cfg()), knownRecipes: [...prof.recipes],
       protectedUntil: new Date(now + cfg().pvp.newbieProtectionHours * 3_600_000),
@@ -70,7 +72,15 @@ export async function createCharacter(userId: number, raw: unknown) {
     for (const s of starter) { const [it] = await addItem(tx, 'character', ch.id, s.itemId, 1); await tx.update(schema.items).set({ slot: s.slot }).where(eq(schema.items.id, it.id)); }
     await addItem(tx, 'character', ch.id, 'water_bottle', 1);
     await addItem(tx, 'character', ch.id, 'crackers', 2);
-    for (const it of prof.items) await addItem(tx, 'character', ch.id, it.itemId, it.qty);
+    let armed = false;
+    for (const it of prof.items) {
+      const d = itemDef(it.itemId);
+      // arma de fogo da profissão: vem carregada e já na mão
+      if (d?.props?.weaponType === 'ranged') {
+        const [w] = await addItem(tx, 'character', ch.id, it.itemId, 1, { data: { ammo: d.props.magSize ?? 0 } });
+        if (!armed) { await tx.update(schema.items).set({ slot: 'primary' }).where(eq(schema.items.id, w.id)); armed = true; }
+      } else await addItem(tx, 'character', ch.id, it.itemId, it.qty);
+    }
     await tx.insert(schema.gameLogs).values({ characterId: ch.id, kind: 'system', message: `${ch.firstName} ${ch.lastName} chegou a Raven Creek.` });
     if ((owner?.settings as any)?.rejection) { const { rejection: _r, ...rest } = owner!.settings as any; await tx.update(schema.users).set({ settings: rest }).where(eq(schema.users.id, userId)); }
     return ch;

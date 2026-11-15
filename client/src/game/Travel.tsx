@@ -47,6 +47,7 @@ export function TravelScreen({ onCharacterClick }: { onCharacterClick?: (c: Scen
   const leader = t.isLeader !== false;
   const leaderName = companions.find((c) => c.id === t.leaderId)?.name.split(' ')[0];
   const togglePause = async () => { setBusy(true); await action('travel_pause', { pause: !paused }); setBusy(false); };
+  const turnBack = async () => { setBusy(true); await action('travel_back', {}); setBusy(false); };
   const nearby = (t.nearby ?? []).filter((n) => !companions.some((c) => c.id === n.id));
   const join = async (n: NearbyTraveler) => { setBusy(true); const r = await action('travel_join', { targetId: n.id }); setBusy(false); if (r.ok) setPick(null); };
   const nearbyNote = (n: NearbyTraveler) => n.travelStatus === 'paused' ? 'parado na estrada' : `indo para ${n.toName}`;
@@ -81,6 +82,12 @@ export function TravelScreen({ onCharacterClick }: { onCharacterClick?: (c: Scen
               <button className={`btn !py-1.5 ${paused ? 'btn-moss' : ''}`} disabled={busy} onClick={togglePause}
                 title={paused ? 'Continuar a viagem' : leader ? 'Parar no caminho: o tempo da viagem congela para o grupo todo' : `Parar sozinho: ${leaderName ?? 'o grupo'} segue e chega antes; você continua indo para ${t.toName}`}>
                 <GameIcon name={paused ? 'play' : 'pause'} size={16} />{paused ? 'Continuar' : leader ? 'Parar' : 'Ficar para trás'}
+              </button>
+            )}
+            {canPause && (
+              <button className="btn !py-1.5" disabled={busy} onClick={turnBack}
+                title={leader ? `Voltar para ${t.fromName} pelo mesmo caminho (o grupo volta junto)` : `Deixar de acompanhar ${leaderName ?? 'o grupo'} e voltar sozinho para ${t.fromName}`}>
+                <GameIcon name="route" size={16} />Dar meia-volta
               </button>
             )}
           </div>
