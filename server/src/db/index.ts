@@ -24,7 +24,7 @@ function normalizePem(raw: string): string {
  * (até com "<password>") e pôr a senha à parte, sem se preocupar com caracteres especiais (@ : / # %…).
  */
 function withPassword(url: string): string {
-  const pw = process.env.DATABASE_PASSWORD;
+  const pw = process.env.DATABASE_PASSWORD?.trim();
   if (!pw) return url;
   const m = url.match(/^(postgres(?:ql)?:\/\/)([^@/]*)@(.*)$/);
   if (!m) return url;
@@ -47,6 +47,18 @@ function poolConfig(rawUrl: string): pg.PoolConfig {
   if (!wantSsl || process.env.DATABASE_SSL === '0') return { connectionString: url, max };
   return { connectionString: clean, max, ssl: { rejectUnauthorized: false } };
 }
+
+/** Linha de diagnóstico no log (sem a senha): ajuda a achar erro de configuração na hospedagem. */
+function describe(rawUrl: string) {
+  const m = rawUrl.trim().match(/^postgres(?:ql)?:\/\/([^@/]*)@([^/?]+)(\/[^?]*)?/);
+  if (!m) return 'DATABASE_URL não parece uma URL postgresql://usuario:senha@host:porta/banco';
+  const [user, urlPw = ''] = m[1].split(':');
+  const fromEnv = process.env.DATABASE_PASSWORD?.trim();
+  const pw = fromEnv ? `DATABASE_PASSWORD (${fromEnv.length} caracteres)` : /^<.*>$/.test(urlPw) ? 'AINDA É O MODELO "<password>" — defina DATABASE_PASSWORD' : urlPw ? `da própria URL (${decodeURIComponent(urlPw).length} caracteres)` : 'nenhuma';
+  const cert = process.env.DATABASE_CERT || process.env.DATABASE_CERT_B64 ? 'com certificado' : 'sem certificado';
+  return `usuário "${user}" em ${m[2]}, banco "${(m[3] ?? '/').slice(1) || user}", senha: ${pw}, ${cert}`;
+}
+if (!env.isTest && process.env.NODE_ENV === 'production') console.log(`[banco] ${describe(env.databaseUrl)}`);
 
 export const pool = new pg.Pool(poolConfig(env.databaseUrl));
 // Conexões ociosas que caem (ex.: banco reiniciado) não podem derrubar o servidor; o pool reconecta sozinho.
