@@ -16,7 +16,7 @@ const k = (x: number, y: number) => `${x},${y}`;
 const TILE_TIP: Record<string, string> = {
   ...PROP_TIP, '#': 'Parede', c: 'Cobertura baixa: não dá para atravessar, mas dá para atirar por cima; quem está atrás se defende melhor.',
   o: 'Obstáculo alto: bloqueia a passagem e a visão.', T: 'Árvore: bloqueia a passagem e a visão.', w: 'Água: não dá para atravessar.',
-  '~': 'Terreno difícil: andar aqui custa 2 PA.', '+': 'Porta fechada: fique ao lado e clique para abrir.', '/': 'Porta aberta: fique ao lado e clique para fechar.',
+  '~': 'Terreno difícil: andar aqui custa 2 PA.', '+': 'Porta FECHADA: fique ao lado e clique nela para abrir (1 PA).', '/': 'Porta ABERTA: dá para passar por ela. Para fechar, fique ao lado e use o botão "Fechar porta".',
 };
 const SPRITE = (n: string) => `/assets/arenas/sprites/${n}.png`;
 const isVerticalDoor = (layout: string[], x: number, y: number) => !(layout[y]?.[x - 1] === '#' || layout[y]?.[x + 1] === '#');
@@ -115,7 +115,8 @@ export function CombatScreen() {
       if (u.side === 'zombie' || (combat.pvp && u.team !== me.team)) return act({ type: 'attack', targetId: u.id, aimHead: aim });
       return;
     }
-    if ((t === '+' || t === '/') && Math.max(Math.abs(x - me.x), Math.abs(y - me.y)) === 1) return act({ type: 'door', x, y });
+    // porta fechada ao lado: abre. Porta aberta: é chão, dá para andar por ela (fechar é pelo botão "Fechar porta").
+    if (t === '+' && adj) return act({ type: 'door', x, y });
     if (reach.has(k(x, y))) {
       if (mobile && hover !== k(x, y)) { setHover(k(x, y)); buzz(8); return; } // no toque: o primeiro toque mostra o custo, o segundo anda
       audio.sfx('footsteps', 0.4); setHover(null); return act({ type: 'move', x, y });
@@ -125,6 +126,10 @@ export function CombatScreen() {
   const weapons = self?.inventory.filter((i) => i.props.weaponType && i.slot !== 'primary') ?? [];
   const throwables = (self?.inventory.filter((i) => !i.slot) ?? []).sort((a, b) => b.weight - a.weight);
   const onExit = me && combat.exits.some((e) => e.x === me.x && e.y === me.y);
+  const openDoorNear = me ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].map(([dx, dy]) => ({ x: me.x + dx, y: me.y + dy }))
+    .find((p) => combat.tiles[p.y]?.[p.x] === '/' && !unitAt(p.x, p.y)) : undefined;
+  const readyCount = combat.units.filter((u) => u.side === 'player' && !u.out && u.endedTurn).length;
+  const playersCount = combat.units.filter((u) => u.side === 'player' && !u.out).length;
   const ended = combat.status === 'ended' || !!combat.result;
 
   return (
@@ -139,7 +144,7 @@ export function CombatScreen() {
             {mobile && <button className="btn btn-ghost !min-h-9 !px-2 !text-[14px]" onClick={() => setFit(!fit)} aria-pressed={fit}>{fit ? 'Aproximar' : 'Ver tudo'}</button>}
             {!mobile && <span className="tape !text-[16px]">Rodada {combat.round}</span>}
             <div role="timer" aria-live="off" className={`px-3 py-1 bg-[#0b0c07] border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,.8)] font-[family-name:var(--font-plate)] font-bold text-[20px] tabular-nums flex items-center gap-2 ${combat.phase !== 'players' ? 'text-blood-400' : secs < 10 ? 'text-blood-400' : 'text-amber-450'}`}>
-              <GameIcon name="end-turn" size={17} />{combat.phase === 'players' ? <>Sua vez <span className="font-sans font-bold text-[18px]">{secs} s</span></> : 'Infectados agindo'}
+              <GameIcon name="end-turn" size={17} />{combat.phase === 'players' ? (me?.endedTurn && playersCount > 1 ? <>Esperando os outros ({readyCount}/{playersCount}) <span className="font-sans font-bold text-[18px]">{secs} s</span></> : <>Sua vez <span className="font-sans font-bold text-[18px]">{secs} s</span></>) : 'Infectados agindo'}
             </div>
           </div>
         </div>
@@ -165,6 +170,7 @@ export function CombatScreen() {
                   {t === 'A' && <span className={`absolute inset-x-[8%] inset-y-[22%] rounded-md bg-[#3d4b58] border border-[#5d7080] ${combat.alarm && combat.alarm.x === x && combat.alarm.y === y ? 'pulse-red' : ''}`} />}
                   {t === 'B' && <span className={`absolute inset-[22%] rounded-full bg-[#8a2b1d] border-2 border-[#b4472f] ${combat.fuses?.some((f) => f.x === x && f.y === y) ? 'pulse-red' : ''}`} />}
                   </>}
+                  {(t === '+' || t === '/') && <span className={`absolute inset-0 pointer-events-none ${t === '+' ? 'ring-2 ring-inset ring-blood-400/80' : 'ring-2 ring-inset ring-moss-400/70'}`}><span className={`absolute left-1/2 -translate-x-1/2 bottom-0.5 text-[10px] font-bold leading-none px-1 py-[1px] ${t === '+' ? 'bg-blood-500/90 text-white' : 'bg-moss-400/90 text-black'}`}>{t === '+' ? 'fechada' : 'aberta'}</span></span>}
                   {t === 'E' && <span className="absolute inset-0 flex flex-col items-center justify-end pb-0.5 text-moss-400 pointer-events-none" title="Saída: fique aqui e use Fugir"><GameIcon name="flee" size={Math.max(12, T * 0.32)} className="drop-shadow-[0_1px_2px_#000]" /><span className="text-[11px] leading-none mt-0.5 px-1 bg-black/60">saída</span></span>}
                   {inReach && <span className={`absolute inset-0 ${isHover ? 'bg-amber-450/35' : 'bg-amber-450/10'}`} />}
                   {inReach && isHover && <span className="absolute top-0.5 right-1 text-[12px] font-bold text-amber-200">{reach.get(k(x, y))} PA</span>}
@@ -212,6 +218,7 @@ export function CombatScreen() {
               {throwables.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.weight} kg){i.quantity > 1 ? ` ×${i.quantity}` : ''}</option>)}
             </select>
             <button className={`btn ${mode === 'barricade' ? 'btn-moss' : ''}`} aria-pressed={mode === 'barricade'} disabled={!canAct} onClick={() => setMode(mode === 'barricade' ? 'move' : 'barricade')} title="2 PA: clique numa porta fechada ao seu lado para empilhar móveis; fica bem mais difícil de arrombar"><GameIcon name="base" size={17} />Barricar</button>
+            {openDoorNear && <button className="btn" disabled={!canAct} onClick={() => act({ type: 'door', x: openDoorNear.x, y: openDoorNear.y })} title="1 PA: fecha a porta aberta ao seu lado (infectados precisam arrombar)"><GameIcon name="door" size={17} />Fechar porta</button>}
             <button className="btn" disabled={!canAct} onClick={() => act({ type: 'defend' })}><GameIcon name="defend" size={17} />Defender</button>
             {!mobile && <button className="btn btn-moss" disabled={!canAct || !onExit} onClick={() => act({ type: 'flee' })} title="Fique numa casa de saída"><GameIcon name="flee" size={17} />Fugir</button>}
             {!mobile && <button className="btn btn-danger" disabled={!canAct} onClick={() => act({ type: 'end_turn' })}><GameIcon name="end-turn" size={17} />Encerrar turno</button>}

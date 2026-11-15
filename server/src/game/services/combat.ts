@@ -354,7 +354,8 @@ export async function joinCombat(characterId: number, combatId: number, joinChar
   if (!ch0) fail('Personagem não encontrado.');
   return withCombat(combatId, async (tx, row, s) => {
     const [ch] = await tx.select().from(schema.characters).where(eq(schema.characters.id, characterId)).for('update');
-    assertCanAct(ch!);
+    // Dá para largar o que está fazendo (vasculhar, construir…) para ajudar quem está em perigo.
+    assertCanAct(ch!, { allowBusy: true });
     if (s.context.type !== 'location' || s.context.locationId !== ch!.locationId) fail('Esse confronto não está acontecendo aqui.');
     if (s.pvp && !cfg().pvp.allowJoinAsReinforcement) fail('Reforços não são permitidos em confrontos entre jogadores.');
     let team = 1;
@@ -369,7 +370,8 @@ export async function joinCombat(characterId: number, combatId: number, joinChar
     const u = addPlayer(s, setup, s.units.length, team);
     if (s.phase !== 'players') u.endedTurn = true;
     log(s, `${u.name} entra no confronto!`, { unit: u.id, kind: 'join' });
-    await tx.update(schema.characters).set({ state: 'combat', combatId: row.id, activity: 'idle' }).where(eq(schema.characters.id, ch!.id));
+    if (ch!.state === 'busy') log(s, `${u.name} larga o que estava fazendo.`, { unit: u.id, kind: 'join' });
+    await tx.update(schema.characters).set({ state: 'combat', combatId: row.id, activity: 'idle', busyUntil: null, busyAction: null }).where(eq(schema.characters.id, ch!.id));
     if (s.pvp) await gameLog(tx, ch!.id, 'pvp', `Entrou como reforço no confronto #${row.id}.`);
     emitToUser(ch!.userId, 'combat:start', { combatId: row.id, reason: row.reason });
     pushSelf(ch!.id); pushScene(ch!.locationId);

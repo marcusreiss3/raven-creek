@@ -272,9 +272,10 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
         const grabbers = s.units.filter((z) => z.side === 'zombie' && !z.out && !z.prone && !z.hidden && dist(z, me) <= 1 && dist(z, step) > 1 && blocksYou(s, z, me));
         for (const z of grabbers) {
           const focused = engagedWith(z, me, s.round);
-          const chance = clamp((((z.stats?.hitChance ?? 55) * cfg.combat.grabChanceMultiplier - ((me.attrs?.agility ?? 4) - 4) * 4 - ((me.stamina ?? 50) < 15 ? -10 : 0)) * (focused ? 1 : 0.5)) / 100, 0.03, 0.9);
+          const chance = clamp((((z.stats?.hitChance ?? 55) * cfg.combat.grabChanceMultiplier - ((me.attrs?.agility ?? 4) - 4) * 4 - ((me.stamina ?? 50) < 15 ? -10 : 0)) * (focused ? 1 : 0.5)) / 100 * 0.5, 0.02, 0.45);
           if (rng.chance(chance)) {
-            me.ap = 0; me.stamina = Math.max(0, (me.stamina ?? 50) - spent * cfg.combat.moveStaminaCost);
+            // agarrado: para onde está e perde o que gastou andando, mas não o turno inteiro
+            me.ap = Math.max(0, me.ap - spent - 1); me.stamina = Math.max(0, (me.stamina ?? 50) - spent * cfg.combat.moveStaminaCost);
             log(s, `${z.name} agarra ${me.name} quando tenta passar!`, { unit: z.id, kind: 'grab', from, to: { x: me.x, y: me.y } });
             damagePlayer(s, z.name, me, 10, 'scratch', false, false, z.name, ZOMBIE_HIT_WEIGHTS, z.stats);
             return { ok: true, apSpent: spent };
@@ -297,11 +298,11 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
       me.ap -= 1; me.actedThisTurn = true; me.stamina = Math.max(0, (me.stamina ?? 50) - 6);
       const resist = t.behavior === 'brute' ? 0.7 : t.side === 'player' ? 0.4 : 0.15;
       const power = 0.55 + ((me.attrs?.strength ?? 4) - 4) * 0.06 + ((me.stamina ?? 50) < 10 ? -0.2 : 0);
-      if (rng.chance(clamp(power - resist + 0.3, 0.1, 0.95))) {
+      if (rng.chance(clamp(power - resist + 0.45, 0.25, 0.95))) {
         const nx = t.x + Math.sign(t.x - me.x), ny = t.y + Math.sign(t.y - me.y);
         const moved = walkable(s, nx, ny) && !unitAt(s, nx, ny);
         if (moved) { t.x = nx; t.y = ny; }
-        if (t.side === 'zombie' && rng.chance(0.5)) t.prone = true;
+        if (t.side === 'zombie' && t.behavior !== 'brute' && rng.chance(0.65)) t.prone = true;
         log(s, `${me.name} empurra ${t.name}${moved ? ' para trás' : ''}${t.prone ? ', derrubando-o' : ''}.`, { unit: me.id, kind: 'shove' });
       } else log(s, `${me.name} tenta empurrar ${t.name}, sem sucesso.`, { unit: me.id, kind: 'shove' });
       return { ok: true, apSpent: 1 };
@@ -313,7 +314,6 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
     case 'end_turn': me.endedTurn = true; me.actedThisTurn = true; return { ok: true, apSpent: 0 };
     case 'flee': {
       if (tileAt(s, me.x, me.y) !== 'E') return { ok: false, error: 'Você precisa estar em uma saída (E) para fugir.' };
-      if (s.units.some((z) => blocksYou(s, z, me))) return { ok: false, error: 'Há um infectado colado em você e de olho em você. Empurre, derrube, mate — ou peça para alguém atrair a atenção dele.' };
       if (me.ap < 2) return { ok: false, error: 'Fugir custa 2 PA.' };
       me.ap -= 2; me.out = 'fled';
       log(s, `${me.name} escapa do confronto!`, { unit: me.id, kind: 'flee' });
@@ -540,7 +540,7 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
     w.ammo -= 1; if (w.itemId) s.effects.push({ type: 'ammo', itemId: w.itemId, ammo: w.ammo });
     s.shotsFired = (s.shotsFired ?? 0) + 1; s.lastShotSkill = p.skill;
   } else {
-    hit = cfg.combat.baseMeleeHit + (p.hitBonus ?? 0) + lvl * 4 + ((me.attrs?.agility ?? 4) - 4) * 2;
+    hit = cfg.combat.baseMeleeHit + 10 + (p.hitBonus ?? 0) + lvl * 4 + ((me.attrs?.agility ?? 4) - 4) * 2;
     hit *= me.meleeMult ?? 1;
   }
   if (aimHead) hit -= 12;
@@ -568,6 +568,7 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
   if (me.characterId) s.effects.push({ type: 'xp', characterId: me.characterId, skill: p.skill, amount: 3, key: `hit_${t.id}` });
 
   if (t.side === 'zombie') {
+    if (!ranged) dmg *= 1.3; // golpes corpo a corpo derrubam infectados com menos tentativas
     damageZombie(s, me, t, dmg, aimHead, ranged, !!p.knockback);
     if (p.spread) {
       const extra = s.units.find((z) => z.side === 'zombie' && !z.out && z.id !== t.id && dist(z, t) <= 1);
@@ -581,7 +582,7 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
 
 function damageZombie(s: CombatState, me: Unit, z: Unit, dmg: number, aimHead: boolean, ranged: boolean, knockback: boolean) {
   const r = rng.next();
-  const headChance = aimHead ? (ranged ? 0.55 : 0.6) : ranged ? 0.12 : 0.2;
+  const headChance = aimHead ? (ranged ? 0.55 : 0.7) : ranged ? 0.12 : 0.3;
   const region = r < headChance ? 'head' : r < headChance + 0.2 ? 'legs' : 'body';
   const st = z.stats!;
   if (region === 'head' && dmg >= st.headThreshold * rng.range(0.8, 1.2)) {
@@ -678,7 +679,9 @@ export function startPlayerPhase(s: CombatState) {
   for (const u of s.units) {
     if (u.side !== 'player' || u.out) continue;
     const overloaded = u.load !== undefined && u.capacity !== undefined && u.load > u.capacity;
-    u.ap = Math.max(1, u.maxAp - ((u.stamina ?? 50) < 15 ? 2 : (u.stamina ?? 50) < 30 ? 1 : 0) - (overloaded ? 1 : 0)); u.endedTurn = false; u.actedThisTurn = false; u.defending = false;
+    // fôlego volta um pouco a cada rodada (mais para quem segurou a posição), e o cansaço tira no máximo 1 PA
+    u.stamina = Math.min(100, (u.stamina ?? 50) + (u.defending ? 20 : 12));
+    u.ap = Math.max(2, u.maxAp - ((u.stamina ?? 50) < 15 ? 1 : 0) - (overloaded ? 1 : 0)); u.endedTurn = false; u.actedThisTurn = false; u.defending = false;
   }
 }
 

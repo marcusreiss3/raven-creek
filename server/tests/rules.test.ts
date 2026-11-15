@@ -57,7 +57,7 @@ describe('Combate: tabuleiro', () => {
     expect(performAction(s, p.id, { type: 'flee' }, cfg).ok).toBe(true);
     expect(checkEnd(s).ended).toBe(true);
   });
-  it('emboscada: zumbis surgem perto; fugir colado num zumbi é impossível e sair do alcance pode ser agarrado', () => {
+  it('emboscada: zumbis surgem perto; dá para fugir mesmo colado num zumbi e sair do alcance pode ser agarrado', () => {
     setRandomSource(() => 0.01); // todas as rolagens "acertam"
     const s = createCombat('street', [{ characterId: 9, name: 'P', maxAp: 4, team: 1, stamina: 100, accuracyMult: 1, meleeMult: 1, canTwoHanded: true, skills: {}, attrs: {}, armor: {} }],
       [{ type: 'walker', behavior: 'shambler', stats: walker.stats, name: 'Caminhante' }], { context: { type: 'location', locationId: 'x' }, isNight: false });
@@ -65,12 +65,13 @@ describe('Combate: tabuleiro', () => {
     const d = Math.max(Math.abs(p.x - z.x), Math.abs(p.y - z.y));
     expect(d).toBeGreaterThanOrEqual(2); expect(d).toBeLessThanOrEqual(4);
     const exit = s.exits[0]; p.x = exit.x; p.y = exit.y; z.x = exit.x - 1; z.y = exit.y; z.prone = false;
-    expect(performAction(s, p.id, { type: 'flee' }, cfg).ok).toBe(false);
+    expect(performAction(s, p.id, { type: 'flee' }, cfg).ok).toBe(true); // fugir pela saída não é mais barrado
+    p.out = null; p.ap = 4;
     p.x = 5; p.y = 4; z.x = 6; z.y = 4;
     const r = performAction(s, p.id, { type: 'move', x: 2, y: 4 }, cfg);
     expect(r.ok).toBe(true);
     expect(p.x).toBe(5); // foi agarrado antes de sair do lugar
-    expect(p.ap).toBe(0);
+    expect(p.ap).toBe(3); // perde 1 PA pelo agarrão, não o turno inteiro
     expect(s.effects.some((e) => e.type === 'wound')).toBe(true);
   });
   it('distração atrai infectados que não estão vendo ninguém', () => {
@@ -161,7 +162,6 @@ describe('Combate: táticas contra infectados', () => {
     const exit = s.exits[0];
     b.x = exit.x; b.y = exit.y; z.x = exit.x - 1; z.y = exit.y; z.targetId = b.id; z.aware = true; z.hidden = false;
     a.x = exit.x - 4; a.y = exit.y;
-    expect(performAction(s, b.id, { type: 'flee' }, cfg).ok).toBe(false); // de olho no Beto
     expect(performAction(s, a.id, { type: 'taunt' }, cfg).ok).toBe(true);
     expect(z.tauntBy).toBe(a.id);
     expect(performAction(s, b.id, { type: 'flee' }, cfg).ok).toBe(true);
@@ -170,12 +170,11 @@ describe('Combate: táticas contra infectados', () => {
     expect(Math.max(Math.abs(z.x - a.x), Math.abs(z.y - a.y))).toBeLessThan(4); // foi atrás de quem provocou
   });
 
-  it('furtivo: passa por infectado distraído sem ser agarrado e foge; quem não está furtivo é barrado', () => {
+  it('furtivo: passa por infectado distraído sem ser agarrado e foge', () => {
     setRandomSource(() => 0.01);
     const s = two(); const [a, , z] = s.units; s.units.splice(1, 1);
     const exit = s.exits[0];
     a.x = exit.x; a.y = exit.y; z.x = exit.x - 1; z.y = exit.y; z.targetId = null; z.aware = false; z.hidden = false;
-    expect(performAction(s, a.id, { type: 'flee' }, cfg).ok).toBe(false);
     expect(performAction(s, a.id, { type: 'sneak' }, cfg).ok).toBe(true);
     expect(performAction(s, a.id, { type: 'flee' }, cfg).ok).toBe(true);
   });
