@@ -29,6 +29,12 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
   const start = () => api<{ sessionId?: number; players?: number }>('/admin/prologue/start', { body: {} }).then(() => { toast('Dia 1 começou.'); reload(); }).catch((e) => toast(e.message, 'warn'));
   const stop = () => api('/admin/prologue/stop', { method: 'POST' }).then(() => { toast('Dia 1 encerrado. Crônicas entregues.'); reload(); }).catch((e) => toast(e.message, 'warn'));
   const join = (id: number, name: string) => api('/admin/prologue/join', { body: { characterId: id } }).then(() => { toast(`${name} entrou no Dia 1.`); reload(); }).catch((e) => toast(e.message, 'warn'));
+  const joinAll = async () => {
+    const list = (info.latecomers ?? []).filter((p) => !p.staff);
+    let ok = 0;
+    for (const p of list) { try { await api('/admin/prologue/join', { body: { characterId: p.id } }); ok++; } catch { /* segue para o próximo */ } }
+    toast(ok ? `${ok} ${ok === 1 ? 'pessoa liberada' : 'pessoas liberadas'} para o Dia 1.` : 'Ninguém para liberar.', ok ? 'success' : 'warn'); reload();
+  };
   const c = info.content;
   return (
     <div className={`panel p-4 mb-6 border-l-4 ${r ? 'border-amber-450' : info.settings.enabled ? 'border-moss-400' : 'border-ink-600'}`}>
@@ -68,7 +74,10 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
           </div>
           {!!info.latecomers?.length && (
             <div className="mt-3 border border-amber-450/40 bg-black/20 px-3 py-2">
-              <div className="text-[13.5px] font-bold text-ink-100">Conectados fora do Dia 1 ({info.latecomers.length})</div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-[13.5px] font-bold text-ink-100">Conectados fora do Dia 1 ({info.latecomers.length})</div>
+                {info.latecomers.some((p) => !p.staff) && <button className="btn btn-moss !py-1 !px-3 !text-[13.5px]" onClick={joinAll}>Liberar todos que estão esperando</button>}
+              </div>
               <p className="text-[12.5px] text-ink-300">Não estavam na sala de espera na hora do começo (ou a ficha ainda não estava aprovada). "Colocar no Dia 1" aprova a ficha se precisar e junta a pessoa a um grupo da mesma profissão; ela recebe as mensagens daqui em diante.</p>
               <div className="mt-1.5 flex flex-wrap gap-2">
                 {info.latecomers.map((p) => (
