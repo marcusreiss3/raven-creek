@@ -40,7 +40,8 @@ export type Effect =
   | { type: 'stamina'; characterId: number; stamina: number }
   | { type: 'xp'; characterId: number; skill: string; amount: number; key: string }
   | { type: 'kill'; characterId?: number; zombieType: string }
-  | { type: 'armor_wear'; characterId: number; region: string };
+  | { type: 'armor_wear'; characterId: number; region: string }
+  | { type: 'arrow'; characterId: number };
 export type CombatState = {
   mapKey: string; width: number; height: number; tiles: string[]; doors: Record<string, Door>;
   units: Unit[]; round: number; phase: 'players' | 'zombies' | 'ended'; log: LogEntry[]; effects: Effect[]; noise: number;
@@ -538,6 +539,7 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
     if (inCover(s, me, t)) hit -= cfg.combat.coverBonus;
     hit *= me.accuracyMult ?? 1;
     w.ammo -= 1; if (w.itemId) s.effects.push({ type: 'ammo', itemId: w.itemId, ammo: w.ammo });
+    if (p.ammoType === 'arrow' && me.characterId) s.effects.push({ type: 'arrow', characterId: me.characterId });
     s.shotsFired = (s.shotsFired ?? 0) + 1; s.lastShotSkill = p.skill;
   } else {
     hit = cfg.combat.baseMeleeHit + 10 + (p.hitBonus ?? 0) + lvl * 4 + ((me.attrs?.agility ?? 4) - 4) * 2;

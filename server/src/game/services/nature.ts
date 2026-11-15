@@ -154,11 +154,14 @@ export async function completeOutdoorJob(jobId: number, characterId: number, kin
       const weapon = items.find((i) => i.slot === 'primary'); const wd = weapon ? itemDef(weapon.defId) : null;
       const ranged = wd?.props.weaponType === 'ranged';
       const rifle = wd?.id === 'hunting_rifle';
-      const chance = clamp((0.3 + surv * 0.05 + (rifle ? 0.25 : ranged ? 0.12 : 0) + dogBonus) * seasonMult('huntMultiplier') * (night ? 0.7 : 1), 0.05, 0.9);
+      const bow = wd?.props.ammoType === 'arrow';
+      const chance = clamp((0.3 + surv * 0.05 + (rifle ? 0.25 : bow ? 0.2 : ranged ? 0.12 : 0) + dogBonus) * seasonMult('huntMultiplier') * (night ? 0.7 : 1), 0.05, 0.9);
       if (ranged && weapon) {
         const ammo = Number(weapon.data.ammo ?? 0);
-        await tx.update(schema.items).set({ data: { ...weapon.data, ammo: Math.max(0, ammo - 1) } }).where(eq(schema.items.id, weapon.id));
-        noisyAt = ch.locationId;
+        // arco: silencioso, e a flecha quase sempre volta
+        const spent = bow ? (rng.chance(0.3) ? 1 : 0) : 1;
+        if (spent) await tx.update(schema.items).set({ data: { ...weapon.data, ammo: Math.max(0, ammo - 1) } }).where(eq(schema.items.id, weapon.id));
+        if (!bow) noisyAt = ch.locationId;
       }
       if (rng.chance(chance)) {
         const big = rng.chance(rifle ? 0.55 : 0.3);

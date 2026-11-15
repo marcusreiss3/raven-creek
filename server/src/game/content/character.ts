@@ -14,7 +14,7 @@ export const ATTRIBUTE_POINTS = 22; // soma total distribuída (5 atributos)
 
 export const SKILLS: Record<string, { name: string; attribute: AttributeKey; category: string }> = {
   pistol: { name: 'Pistolas', attribute: 'perception', category: 'combate' },
-  rifle: { name: 'Rifles', attribute: 'perception', category: 'combate' },
+  rifle: { name: 'Rifles e arcos', attribute: 'perception', category: 'combate' },
   shotgun: { name: 'Espingardas', attribute: 'strength', category: 'combate' },
   blade: { name: 'Armas cortantes', attribute: 'agility', category: 'combate' },
   blunt: { name: 'Armas contundentes', attribute: 'strength', category: 'combate' },
@@ -69,8 +69,8 @@ export const PROFESSIONS: Profession[] = [
     skills: { cooking: 4, blade: 1 }, recipes: ['cooked_meal', 'boiled_water', 'hearty_stew'], items: [{ itemId: 'kitchen_knife', qty: 1 }, { itemId: 'canned_beans', qty: 2 }],
     perks: ['Culinária nível 4', 'Toda receita de comida rende o dobro', 'Sabe fazer ensopado: 2 enlatados viram refeições para o grupo', 'Refeições alimentam 30% mais quem cozinhou'], modifiers: { mealBonus: 1.3, mealYield: 2 } },
   { id: 'hunter', name: 'Caçador', description: 'Rastreia, espreita e acerta de longe.',
-    skills: { rifle: 2, survival: 2, stealth: 1 }, recipes: ['cooked_meal'], items: [{ itemId: 'hunting_knife', qty: 1 }],
-    perks: ['Sobrevivência nível 2', 'Viagens por trilha 15% mais rápidas'], modifiers: { trailSpeed: 1.15 } },
+    skills: { rifle: 2, survival: 2, stealth: 1 }, recipes: ['cooked_meal', 'arrow_craft'], items: [{ itemId: 'hunting_bow', qty: 1 }, { itemId: 'arrow', qty: 12 }, { itemId: 'hunting_knife', qty: 1 }],
+    perks: ['Começa com arco de caça e 12 flechas (silencioso; dá para recolher as flechas)', 'Sabe fazer flechas (1 tábua → 4 flechas)', 'Sobrevivência nível 2', 'Viagens por trilha 15% mais rápidas'], modifiers: { trailSpeed: 1.15 } },
   { id: 'athlete', name: 'Atleta', description: 'Corre longe e se recupera rápido.',
     skills: { athletics: 4 }, recipes: [], items: [{ itemId: 'water_bottle', qty: 1 }],
     perks: ['Atletismo nível 4', 'Estamina recupera 25% mais rápido', '+1 PA para movimento'], modifiers: { staminaRegen: 1.25, moveAp: 1 } },

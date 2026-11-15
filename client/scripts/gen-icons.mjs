@@ -42,7 +42,7 @@ const MAP = {
   antiseptic: 'potion-ball', painkillers: 'pill', antibiotics: 'medicine-pills', splint: 'arm-bandage', suture_kit: 'sewing-needle',
   first_aid_kit: 'first-aid-kit', surgical_supplies: 'scalpel', kitchen_knife: 'kitchen-knives', combat_knife: 'trench-knife', hunting_knife: 'bowie-knife',
   hatchet: 'hatchet', fire_axe: 'fire-axe', baseball_bat: 'baseball-bat', baton: 'baton', crowbar: 'crowbar', pipe: 'lead-pipe', spear: 'barbed-spear',
-  pistol_9mm: 'pistol-gun', revolver_38: 'revolver', hunting_rifle: 'winchester-rifle', service_rifle: 'winchester-rifle', shotgun: 'shotgun', ammo_9mm: 'bullets', ammo_38: 'bullets',
+  pistol_9mm: 'pistol-gun', revolver_38: 'revolver', hunting_rifle: 'winchester-rifle', service_rifle: 'winchester-rifle', hunting_bow: 'pocket-bow', arrow: 'arrow-cluster', shotgun: 'shotgun', ammo_9mm: 'bullets', ammo_38: 'bullets',
   ammo_308: 'heavy-bullets', ammo_12g: 'shotgun-rounds', tshirt: 't-shirt', flannel_shirt: 'shirt', leather_jacket: 'leather-vest', winter_coat: 'hoodie',
   police_vest: 'kevlar-vest', jeans: 'trousers', cargo_pants: 'trousers', sneakers: 'running-shoe', combat_boots: 'leather-boot', leather_gloves: 'gloves',
   motorcycle_helmet: 'full-motorcycle-helmet', military_helmet: 'brodie-helmet', surgical_mask: 'gas-mask', gas_mask: 'gas-mask', scarf: 'rolled-cloth',

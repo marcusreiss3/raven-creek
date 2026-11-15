@@ -219,6 +219,26 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    version: 16, name: 'Caçador com arco de caça e flechas (dá para fazer e recolher flechas)',
+    run: async () => {
+      for (const id of ['hunting_bow', 'arrow']) { const d = ITEM_DEFS.find((x) => x.id === id); if (d) await db.insert(schema.itemDefs).values(itemRow(d) as any).onConflictDoNothing(); }
+      const rec = RECIPES.find((r) => r.id === 'arrow_craft');
+      if (rec) await db.insert(schema.recipes).values(rec as any).onConflictDoUpdate({ target: schema.recipes.id, set: rec as any });
+      const hunters = await db.select({ id: schema.characters.id, knownRecipes: schema.characters.knownRecipes }).from(schema.characters)
+        .where(sql`${schema.characters.alive} = true and ${schema.characters.profession} = 'hunter'`);
+      const guns = ITEM_DEFS.filter((d) => (d.props as any)?.weaponType === 'ranged').map((d) => d.id);
+      for (const h of hunters) {
+        if (!h.knownRecipes.includes('arrow_craft')) await db.update(schema.characters).set({ knownRecipes: [...h.knownRecipes, 'arrow_craft'] }).where(eq(schema.characters.id, h.id));
+        const owned = await db.select({ defId: schema.items.defId, slot: schema.items.slot }).from(schema.items)
+          .where(sql`${schema.items.ownerType} = 'character' and ${schema.items.ownerId} = ${String(h.id)}`);
+        if (owned.some((i) => guns.includes(i.defId))) continue;
+        const handFree = !owned.some((i) => i.slot === 'primary');
+        await db.insert(schema.items).values({ defId: 'hunting_bow', quantity: 1, durability: 200, ownerType: 'character', ownerId: String(h.id), slot: handFree ? 'primary' : null, data: { ammo: 6 } });
+        await db.insert(schema.items).values({ defId: 'arrow', quantity: 12, durability: 0, ownerType: 'character', ownerId: String(h.id), data: {} });
+      }
+    },
+  },
 ];
 
 export async function applyPatches() {

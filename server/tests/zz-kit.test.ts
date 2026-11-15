@@ -47,3 +47,14 @@ describe('classes de suporte', () => {
     expect(await teacherBonus(db, other.character)).toBe(1); // professor desconectado não conta
   });
 });
+
+describe('caçador com arco', () => {
+  it('começa com arco carregado na mão, flechas e a receita de flechas', async () => {
+    const h = await makePlayer({ profession: 'hunter' });
+    const it = await itemsOf(h.character.id);
+    const bow = it.find((i) => i.defId === 'hunting_bow')!;
+    expect(bow.slot).toBe('primary'); expect(bow.data.ammo).toBe(6);
+    expect(it.find((i) => i.defId === 'arrow')?.quantity).toBe(12);
+    expect(h.character.knownRecipes).toContain('arrow_craft');
+  });
+});

@@ -180,6 +180,13 @@ async function applyEffect(tx: Tx, s: CombatState, e: Effect, kills: Record<numb
       if (r.levelUp) notify(ch.userId, `Habilidade aprimorada: ${e.skill} agora no nível ${r.skills[e.skill].level}`, 'success');
       return;
     }
+    case 'arrow': {
+      // a flecha disparada cai no chão do local (dá para recolher depois); às vezes quebra
+      if (!rng.chance(0.75)) return;
+      if (s.context.type === 'location' && s.context.locationId) await addItem(tx, 'location', s.context.locationId, 'arrow', 1);
+      else await addItem(tx, 'character', e.characterId, 'arrow', 1); // na estrada, quem atirou recolhe no fim
+      return;
+    }
     case 'kill': if (e.characterId) kills[e.characterId] = (kills[e.characterId] ?? 0) + 1; (s as any).killCount = ((s as any).killCount ?? 0) + 1; return;
     case 'stamina': return;
   }

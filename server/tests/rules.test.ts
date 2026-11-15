@@ -92,6 +92,16 @@ describe('Combate: tabuleiro', () => {
     performAction(s, p.id, { type: 'attack', targetId: z.id, aimHead: true }, cfg);
     expect(z.out).toBe('dead');
   });
+  it('flecha disparada gera o efeito para cair no chão (dá para recolher)', () => {
+    setRandomSource(() => 0.01);
+    const s = createCombat('street', [{ characterId: 9, name: 'P', maxAp: 6, team: 1, stamina: 100, accuracyMult: 1, meleeMult: 1, canTwoHanded: true, skills: {}, attrs: {}, armor: {},
+      weapon: { itemId: 77, defId: 'hunting_bow', name: 'Arco', durability: 50, ammo: 6, props: { weaponType: 'ranged', skill: 'rifle', damage: 20, range: 9, apCost: 2, staminaCost: 3, hitBonus: 5, ammoType: 'arrow', noise: 1 } } }],
+      [{ type: 'walker', behavior: 'shambler', stats: walker.stats, name: 'Caminhante' }], { context: { type: 'location', locationId: 'x' }, isNight: false });
+    const p = s.units[0]; const z = s.units[1]; z.x = p.x + 2; z.y = p.y; z.hidden = false;
+    expect(performAction(s, p.id, { type: 'attack', targetId: z.id, aimHead: false }, cfg).ok).toBe(true);
+    expect(s.effects.some((e) => e.type === 'arrow' && e.characterId === 9)).toBe(true);
+    expect(p.weapon!.ammo).toBe(5);
+  });
 });
 
 describe('Corpo e ferimentos', () => {
