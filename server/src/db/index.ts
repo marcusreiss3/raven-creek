@@ -19,7 +19,21 @@ function normalizePem(raw: string): string {
  * - Supabase/Neon (ou DATABASE_SSL=1, ou sslmode=… na URL): SSL sem verificar o certificado.
  * - Banco da Square Cloud: cole o conteúdo do certificate.pem em DATABASE_CERT (o certificado nunca vai para o GitHub).
  */
-function poolConfig(url: string): pg.PoolConfig {
+/**
+ * DATABASE_PASSWORD (opcional) substitui a senha da URL. Assim dá para colar a URL do painel como vem
+ * (até com "<password>") e pôr a senha à parte, sem se preocupar com caracteres especiais (@ : / # %…).
+ */
+function withPassword(url: string): string {
+  const pw = process.env.DATABASE_PASSWORD;
+  if (!pw) return url;
+  const m = url.match(/^(postgres(?:ql)?:\/\/)([^@/]*)@(.*)$/);
+  if (!m) return url;
+  const user = m[2].split(':')[0];
+  return `${m[1]}${user}:${encodeURIComponent(pw)}@${m[3]}`;
+}
+
+function poolConfig(rawUrl: string): pg.PoolConfig {
+  const url = withPassword(rawUrl.trim());
   const max = Number(process.env.DB_POOL_MAX ?? 15);
   // Tira os parâmetros ssl* da URL: senão o pg tenta ler arquivos de certificado do disco ou verifica o certificado à força.
   const clean = url.replace(/([?&])(sslmode|sslcert|sslkey|sslrootcert)=[^&]*/g, '$1').replace(/[?&]+(?=&|$)/g, '').replace(/\?&/, '?');

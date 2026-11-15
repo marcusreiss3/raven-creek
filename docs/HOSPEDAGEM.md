@@ -30,6 +30,7 @@ As tabelas e o mundo são criados sozinhos na primeira subida.
 | `SEED_DEMO` | recomendado `0` | `0` não cria as contas de demonstração |
 | `CLIENT_ORIGIN` | opcional | endereço do site, ex. `https://ravencreek.squareweb.app` |
 | `DATABASE_CERT` | só no banco da Square | conteúdo do `certificate.pem` |
+| `DATABASE_PASSWORD` | opcional | senha do banco; substitui a da URL (útil com `<password>` ou caracteres especiais) |
 | `DB_POOL_MAX` | opcional | conexões simultâneas com o banco (padrão 15) |
 
 ## Avisos
