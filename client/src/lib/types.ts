@@ -63,6 +63,8 @@ export type CombatUnit = {
   characterId?: number; portrait?: string | null; defending?: boolean; endedTurn?: boolean; prone?: boolean; crawling?: boolean; behavior?: string; zombieType?: string; condition?: string;
   weapon: null | { name: string; ammo?: number; magSize?: number; range: number; apCost: number; ranged: boolean; twoHanded: boolean; skill?: string }; stamina?: number; autoFlee?: boolean;
   sneaking?: boolean; overloaded?: boolean; tauntedBy?: string; hasLighter?: boolean; dog?: string;
+  /** infectados: direção do olhar, alcance da visão e quem estão caçando */
+  face?: [number, number]; sight?: number; hunting?: string;
 };
 export type CombatView = {
   id: number; status: string; reason: string; deadline: string; round: number; phase: string; pvp: boolean; width: number; height: number; tiles: string[];

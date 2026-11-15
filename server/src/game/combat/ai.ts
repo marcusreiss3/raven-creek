@@ -2,7 +2,7 @@ import type { GameConfig } from '../content/defaultConfig.js';
 import { ZOMBIE_HIT_WEIGHTS } from '../rules/body.js';
 import { clamp, rng } from '../rules/rng.js';
 import {
-  type CombatState, type Unit, activeUnits, canStep, damagePlayer, detonateFuses, dist, findPath, hasLOS, key, log, lureToAlarm, stepCost, tileAt, unitAt, walkable,
+  type CombatState, type Unit, activeUnits, canStep, damagePlayer, detonateFuses, dist, findPath, hasLOS, key, log, lureToAlarm, stepCost, tileAt, unitAt, walkable, inCone, faceTo, DIRS,
 } from './engine.js';
 
 /**
@@ -41,7 +41,7 @@ export function runZombiePhase(s: CombatState, cfg: GameConfig) {
     const taunter = z.tauntBy && (z.tauntUntil ?? 0) >= s.round ? s.units.find((u) => u.id === z.tauntBy && (u.out === null || u.out === 'down')) : undefined;
     const distracted = !taunter && ((z as any).distractedUntil ?? 0) >= s.round && z.lastKnown;
     const target = taunter ?? (distracted && rng.chance(0.7) ? undefined : pickTarget(s, z));
-    if (target) { z.targetId = target.id; z.lastKnown = { x: target.x, y: target.y }; z.aware = true; }
+    if (target) { z.targetId = target.id; z.lastKnown = { x: target.x, y: target.y }; z.aware = true; faceTo(z, target); }
     else if (z.targetId && !distracted) { z.targetId = null; log(s, `${z.name} perde você de vista.`, { unit: z.id, kind: 'lost' }); }
 
     if (z.behavior === 'wanderer' && rng.chance(0.5)) { wander(s, z, 2); continue; }
@@ -52,6 +52,7 @@ export function runZombiePhase(s: CombatState, cfg: GameConfig) {
       continue;
     }
     if (z.behavior !== 'runner' && rng.chance(0.35)) wander(s, z, 1);
+    else if (rng.chance(0.3)) z.face = rng.pick(DIRS); // olha em volta
   }
   reinforcements(s, cfg);
 }
@@ -68,7 +69,10 @@ function pickTarget(s: CombatState, z: Unit): Unit | undefined {
   const per = (z.stats!.perception) - (s.isNight ? 2 : 0);
   const canSense = (u: Unit) => {
     const d = dist(u, z);
-    if (!u.sneaking || u.out === 'down' || z.targetId === u.id) return d <= per && hasLOS(s, z, u);
+    if (z.targetId === u.id) return d <= per && hasLOS(s, z, u); // já está atrás de você: não perde de vista ao virar
+    // só vê o que está dentro do cone de visão (para onde está olhando); colado sempre percebe
+    if (!inCone(z, u)) return false;
+    if (!u.sneaking || u.out === 'down') return d <= per && hasLOS(s, z, u);
     // furtivo: só é notado bem de perto — e mesmo assim nem sempre
     const stealth = u.skills?.stealth ?? 0;
     const sneakPer = Math.max(1, per - 3 - Math.floor(stealth / 2));
@@ -104,7 +108,7 @@ function moveToward(s: CombatState, z: Unit, to: { x: number; y: number }, adjac
     const c = stepCost(s, p);
     if (c > z.ap) break;
     if (!canStep(s, z, p)) { if (!sidestep(s, z, to)) break; movedAny = true; z.ap -= 1; continue; }
-    z.x = p.x; z.y = p.y; z.ap -= c; movedAny = true;
+    faceTo(z, p); z.x = p.x; z.y = p.y; z.ap -= c; movedAny = true;
   }
   if (movedAny) log(s, `${z.name} avança.`, { unit: z.id, from, to: { x: z.x, y: z.y }, kind: 'zmove' });
   return movedAny;
@@ -120,7 +124,7 @@ function sidestep(s: CombatState, z: Unit, to: { x: number; y: number }) {
   }
   if (!opts.length) return false;
   const p = rng.pick(opts); const from = { x: z.x, y: z.y };
-  z.x = p.x; z.y = p.y;
+  faceTo(z, p); z.x = p.x; z.y = p.y;
   log(s, `${z.name} contorna o obstáculo.`, { unit: z.id, from, to: p, kind: 'zmove' });
   return true;
 }
@@ -141,13 +145,14 @@ function wander(s: CombatState, z: Unit, steps: number) {
     const opts: { x: number; y: number }[] = [];
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const p = { x: z.x + dx, y: z.y + dy }; if ((dx || dy) && canStep(s, z, p)) opts.push(p); }
     if (!opts.length) break;
-    const p = rng.pick(opts); z.x = p.x; z.y = p.y;
+    const p = rng.pick(opts); faceTo(z, p); z.x = p.x; z.y = p.y;
   }
   if (from.x !== z.x || from.y !== z.y) log(s, `${z.name} cambaleia sem rumo.`, { unit: z.id, from, to: { x: z.x, y: z.y }, kind: 'zmove' });
 }
 
 function zombieAttack(s: CombatState, z: Unit, t: Unit, bonus: number) {
   const st = z.stats!;
+  faceTo(z, t);
   // Grupos são perigosos: cada zumbi extra adjacente ao alvo aumenta a chance
   const crowd = s.units.filter((o) => o.side === 'zombie' && !o.out && o.id !== z.id && dist(o, t) <= 1).length;
   let hit = st.hitChance + bonus + crowd * 6 + (t.out === 'down' ? 40 : 0) - (t.defending ? 20 : 0) - ((t.attrs?.agility ?? 4) - 4) * 2;

@@ -94,6 +94,8 @@ export function publicCombat(row: Pick<CombatRow, 'id' | 'status' | 'phaseDeadli
       sneaking: u.sneaking || undefined, overloaded: u.load !== undefined && u.capacity !== undefined && u.load > u.capacity ? true : undefined,
       tauntedBy: u.side === 'zombie' && u.tauntBy && (u.tauntUntil ?? 0) >= s.round ? u.tauntBy : undefined,
       hasLighter: u.hasLighter || undefined, dog: u.dog?.name,
+      // cone de visão do infectado: para onde olha, até onde enxerga e se já está atrás de alguém
+      ...(u.side === 'zombie' && !u.out ? { face: u.face ?? [0, 1], sight: Math.max(1, (u.stats?.perception ?? 6) - (s.isNight ? 2 : 0)), hunting: u.targetId ?? undefined } : {}),
     })),
     alarm: s.alarm && s.alarm.until >= s.round ? { x: s.alarm.x, y: s.alarm.y } : null, fuses: (s.fuses ?? []).map((f) => ({ x: f.x, y: f.y })),
     log: s.log.slice(-60),

@@ -24,7 +24,7 @@ export type Unit = {
   dog?: { name: string; chance: number; bites: number } | null;
   // zumbi
   zombieType?: string; behavior?: string; stats?: ZombieStats; body?: number; maxBody?: number; legDamage?: number;
-  aware?: boolean; targetId?: string | null; lastKnown?: Pos | null; prone?: boolean; hidden?: boolean; crawling?: boolean; displayName?: string;
+  aware?: boolean; targetId?: string | null; lastKnown?: Pos | null; prone?: boolean; face?: [number, number]; hidden?: boolean; crawling?: boolean; displayName?: string;
   /** Provocado: persegue quem fez barulho para atraí-lo até esta rodada. */
   tauntBy?: string | null; tauntUntil?: number;
   /** Morto que levantou (personagem de jogador): ao cair, larga os pertences. */
@@ -66,6 +66,24 @@ export const inBounds = (s: CombatState, x: number, y: number) => x >= 0 && y >=
 export const unitAt = (s: CombatState, x: number, y: number) => s.units.find((u) => !u.out && u.x === x && u.y === y && !(u.hidden && u.side === 'zombie' && false));
 export const activeUnits = (s: CombatState) => s.units.filter((u) => !u.out);
 export const dist = (a: Pos, b: Pos) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+/** Direções de olhar (8 vizinhos). */
+export const DIRS: [number, number][] = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+/** Vira a unidade para olhar na direção de um ponto. */
+export function faceTo(u: { x: number; y: number; face?: [number, number] }, p: Pos) {
+  const dx = Math.sign(p.x - u.x), dy = Math.sign(p.y - u.y);
+  if (dx || dy) u.face = [dx, dy];
+}
+/** Meio-ângulo do cone de visão de um infectado (graus): 120° no total. */
+export const CONE_HALF_DEG = 60;
+/** O ponto está dentro do cone de visão (direção para onde o infectado olha)? A casa colada sempre conta. */
+export function inCone(z: { x: number; y: number; face?: [number, number] }, p: Pos, strict = false) {
+  const dx = p.x - z.x, dy = p.y - z.y;
+  if (!dx && !dy) return true;
+  if (!strict && Math.max(Math.abs(dx), Math.abs(dy)) <= 1) return true;
+  const f = z.face ?? [0, 1];
+  const dot = (dx * f[0] + dy * f[1]) / (Math.hypot(dx, dy) * Math.hypot(f[0], f[1]));
+  return dot >= Math.cos((CONE_HALF_DEG * Math.PI) / 180);
+}
 const setTile = (s: CombatState, x: number, y: number, ch: string) => { const r = s.tiles[y]; s.tiles[y] = r.slice(0, x) + ch + r.slice(x + 1); };
 export const walkable = (s: CombatState, x: number, y: number) => inBounds(s, x, y) && !BLOCK_MOVE.has(tileAt(s, x, y));
 
@@ -207,7 +225,7 @@ export function spawnZombie(s: CombatState, z: { type: string; behavior: string;
   const u: Unit = {
     id: `z${s.nextZombieId++}`, side: 'zombie', team: 0, name: z.name, zombieType: z.type, behavior: z.behavior, stats: z.stats,
     x: pos.x, y: pos.y, ap: z.stats.ap, maxAp: z.stats.ap, out: null, body: z.stats.body, maxBody: z.stats.body, legDamage: 0,
-    aware: z.behavior === 'runner', targetId: null, lastKnown: null, prone: false, hidden: z.behavior === 'lurker', crawling: false,
+    aware: z.behavior === 'runner', targetId: null, lastKnown: null, prone: false, hidden: z.behavior === 'lurker', crawling: false, face: rng.pick(DIRS),
     ...(z.risenId ? { risenId: z.risenId, portrait: z.portrait ?? null } : {}),
   };
   s.units.push(u);
@@ -545,6 +563,9 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
     hit = cfg.combat.baseMeleeHit + 10 + (p.hitBonus ?? 0) + lvl * 4 + ((me.attrs?.agility ?? 4) - 4) * 2;
     hit *= me.meleeMult ?? 1;
   }
+  // pegar de surpresa: infectado que não está atrás de você e não te vê (fora do cone de visão)
+  const surprise = t.side === 'zombie' && t.targetId !== me.id && !inCone(t, me, true);
+  if (surprise) hit += 20;
   if (aimHead) hit -= 12;
   if (tired) hit -= 15;
   if (t.defending) hit -= cfg.combat.defendBonus;
@@ -571,7 +592,9 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
 
   if (t.side === 'zombie') {
     if (!ranged) dmg *= 1.3; // golpes corpo a corpo derrubam infectados com menos tentativas
-    damageZombie(s, me, t, dmg, aimHead, ranged, !!p.knockback);
+    if (surprise) log(s, `${me.name} pega ${t.name} de surpresa!`, { unit: me.id, kind: 'surprise', to: { x: t.x, y: t.y } });
+    damageZombie(s, me, t, dmg, aimHead || (surprise && !ranged), ranged, !!p.knockback);
+    if (!t.out) { faceTo(t, me); t.aware = true; t.lastKnown = { x: me.x, y: me.y }; }
     if (p.spread) {
       const extra = s.units.find((z) => z.side === 'zombie' && !z.out && z.id !== t.id && dist(z, t) <= 1);
       if (extra) damageZombie(s, me, extra, dmg * 0.5, false, true, false);

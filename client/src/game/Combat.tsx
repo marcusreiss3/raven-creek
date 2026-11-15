@@ -35,6 +35,33 @@ function TileArt({ t, base, vertical, T, alarm, lit }: { t: string; base: string
   );
 }
 
+/** Casas que cada infectado enxerga (cone de 120° para onde olha, até o alcance, sem atravessar parede/porta fechada). Espelho do servidor. */
+const BLOCK_SIGHT = new Set(['#', '+', 'o', 'T', 'S']);
+function visionTiles(c: CombatView) {
+  const out = new Map<string, 'alert' | 'calm'>();
+  const tile = (x: number, y: number) => (x < 0 || y < 0 || x >= c.width || y >= c.height ? '#' : c.tiles[y][x]);
+  const los = (ax: number, ay: number, bx: number, by: number) => {
+    let x0 = ax, y0 = ay; const dx = Math.abs(bx - x0), sx = x0 < bx ? 1 : -1, dy = -Math.abs(by - y0), sy = y0 < by ? 1 : -1; let err = dx + dy;
+    while (!(x0 === bx && y0 === by)) { const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } if (x0 === bx && y0 === by) break; if (BLOCK_SIGHT.has(tile(x0, y0))) return false; }
+    return true;
+  };
+  const cosHalf = Math.cos(Math.PI / 3);
+  for (const z of c.units) {
+    if (z.side !== 'zombie' || z.out || !z.face || !z.sight) continue;
+    const kind = z.hunting ? 'alert' : 'calm';
+    for (let y = z.y - z.sight; y <= z.y + z.sight; y++) for (let x = z.x - z.sight; x <= z.x + z.sight; x++) {
+      const dx = x - z.x, dy = y - z.y; if (!dx && !dy) continue;
+      if (x < 0 || y < 0 || x >= c.width || y >= c.height || BLOCK_SIGHT.has(tile(x, y))) continue;
+      const near = Math.max(Math.abs(dx), Math.abs(dy)) <= 1;
+      const dot = (dx * z.face[0] + dy * z.face[1]) / (Math.hypot(dx, dy) * Math.hypot(z.face[0], z.face[1]));
+      if (!near && dot < cosHalf) continue;
+      if (!los(z.x, z.y, x, y)) continue;
+      const key = k(x, y); if (out.get(key) !== 'alert') out.set(key, kind);
+    }
+  }
+  return out;
+}
+
 /** Prévia local de alcance (o servidor revalida tudo). Mesmas regras do motor: 8 direções, sem cortar quinas, terreno difícil custa 2. */
 function reachable(c: CombatView, from: CombatUnit, ap: number) {
   const tile = (x: number, y: number) => (x < 0 || y < 0 || x >= c.width || y >= c.height ? '#' : c.tiles[y][x]);
@@ -88,6 +115,9 @@ export function CombatScreen() {
   const me = combat?.units.find((u) => u.characterId === self?.id && u.side === 'player');
   const canAct = !!me && !me.out && !me.endedTurn && combat?.phase === 'players' && combat.status === 'active';
   const reach = useMemo(() => (combat && me && canAct ? reachable(combat, me, me.ap) : new Map()), [combat, me?.x, me?.y, me?.ap, canAct]);
+  const [showVision, setShowVision] = useState(() => { try { return localStorage.getItem('rc.combat.vision') !== '0'; } catch { return true; } });
+  const toggleVision = () => setShowVision((v) => { try { localStorage.setItem('rc.combat.vision', v ? '0' : '1'); } catch { /* sem armazenamento */ } return !v; });
+  const vision = useMemo(() => (combat && showVision ? visionTiles(combat) : new Map<string, 'alert' | 'calm'>()), [combat, showVision]);
   const layout = combat ? ARENA_LAYOUTS[combat.mapKey] ?? null : null;
   const T = !combat ? 0 : mobile ? (fit ? Math.floor((box.w - 20) / combat.width) : 44) : Math.max(18, Math.floor(Math.min((box.w - 320 - 44) / combat.width, (box.h - 300) / combat.height, 64)));
   // celular: o tabuleiro não cabe inteiro com casas boas de tocar, então rola e acompanha o seu personagem
@@ -142,6 +172,8 @@ export function CombatScreen() {
           </div>
           <div className={`ml-auto flex items-center ${mobile ? 'gap-2 shrink-0' : 'gap-3'}`}>
             {mobile && <button className="btn btn-ghost !min-h-9 !px-2 !text-[14px]" onClick={() => setFit(!fit)} aria-pressed={fit}>{fit ? 'Aproximar' : 'Ver tudo'}</button>}
+            <button className={`btn btn-ghost !min-h-9 !px-2 !text-[13.5px] ${showVision ? 'text-amber-450' : ''}`} aria-pressed={showVision} onClick={toggleVision}
+              title="Mostra para onde cada infectado está olhando e o que ele enxerga. Amarelo: não te viu ainda. Vermelho: está caçando alguém. Fora do cone dá para passar furtivo e pegar de surpresa (+20% de acerto)."><GameIcon name="observe" size={16} />{mobile ? 'Visão' : 'Visão dos infectados'}</button>
             {!mobile && <span className="tape !text-[16px]">Rodada {combat.round}</span>}
             <div role="timer" aria-live="off" className={`px-3 py-1 bg-[#0b0c07] border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,.8)] font-[family-name:var(--font-plate)] font-bold text-[20px] tabular-nums flex items-center gap-2 ${combat.phase !== 'players' ? 'text-blood-400' : secs < 10 ? 'text-blood-400' : 'text-amber-450'}`}>
               <GameIcon name="end-turn" size={17} />{combat.phase === 'players' ? (me?.endedTurn && playersCount > 1 ? <>Esperando os outros ({readyCount}/{playersCount}) <span className="font-sans font-bold text-[18px]">{secs} s</span></> : <>Sua vez <span className="font-sans font-bold text-[18px]">{secs} s</span></>) : 'Infectados agindo'}
@@ -170,6 +202,7 @@ export function CombatScreen() {
                   {t === 'A' && <span className={`absolute inset-x-[8%] inset-y-[22%] rounded-md bg-[#3d4b58] border border-[#5d7080] ${combat.alarm && combat.alarm.x === x && combat.alarm.y === y ? 'pulse-red' : ''}`} />}
                   {t === 'B' && <span className={`absolute inset-[22%] rounded-full bg-[#8a2b1d] border-2 border-[#b4472f] ${combat.fuses?.some((f) => f.x === x && f.y === y) ? 'pulse-red' : ''}`} />}
                   </>}
+                  {vision.has(k(x, y)) && <span className={`absolute inset-0 pointer-events-none ${vision.get(k(x, y)) === 'alert' ? 'bg-blood-500/25' : 'bg-amber-300/15'}`} />}
                   {(t === '+' || t === '/') && <span className={`absolute inset-0 pointer-events-none ${t === '+' ? 'ring-2 ring-inset ring-blood-400/80' : 'ring-2 ring-inset ring-moss-400/70'}`}><span className={`absolute left-1/2 -translate-x-1/2 bottom-0.5 text-[10px] font-bold leading-none px-1 py-[1px] ${t === '+' ? 'bg-blood-500/90 text-white' : 'bg-moss-400/90 text-black'}`}>{t === '+' ? 'fechada' : 'aberta'}</span></span>}
                   {t === 'E' && <span className="absolute inset-0 flex flex-col items-center justify-end pb-0.5 text-moss-400 pointer-events-none" title="Saída: fique aqui e use Fugir"><GameIcon name="flee" size={Math.max(12, T * 0.32)} className="drop-shadow-[0_1px_2px_#000]" /><span className="text-[11px] leading-none mt-0.5 px-1 bg-black/60">saída</span></span>}
                   {inReach && <span className={`absolute inset-0 ${isHover ? 'bg-amber-450/35' : 'bg-amber-450/10'}`} />}
@@ -285,6 +318,12 @@ function Token({ u, T, me, targetable, onClick }: { u: CombatUnit; T: number; me
         style={{ borderColor: color, background: z ? 'radial-gradient(circle at 40% 35%, #4a2a22, #160d0b)' : '#101109', boxShadow: me ? `0 0 14px ${color}` : undefined, transform: u.prone ? 'scaleY(.6)' : undefined, opacity: u.sneaking ? 0.7 : undefined }}>
         {z ? (u.portrait ? <Img src={portraitUrl(u.portrait)} fallback="/assets/portraits/default.png" className="w-full h-full object-cover object-top risen-filter" /> : (u.zombieType && ZOMBIE_ART.has(u.zombieType) ? <Img src={`/assets/zombies/${u.zombieType}.webp`} fallback="/assets/portraits/default.png" className="w-full h-full object-cover" /> : <GameIcon name="zombie" size={T * 0.5} style={{ color: '#e8c9b8' }} />)) : <Img src={portraitUrl(u.portrait)} fallback="/assets/portraits/default.png" className="w-full h-full object-cover object-top" />}
       </div>
+      {z && u.face && !u.out && (
+        // seta para onde o infectado está olhando
+        <span className="absolute inset-0 pointer-events-none" style={{ transform: `rotate(${Math.atan2(u.face[1], u.face[0]) * 180 / Math.PI}deg)` }} aria-hidden>
+          <span className="absolute top-1/2 -translate-y-1/2 right-[-3px] w-0 h-0 border-y-[6px] border-y-transparent border-l-[9px]" style={{ borderLeftColor: u.hunting ? '#e0554a' : '#f0d070' }} />
+        </span>
+      )}
       {u.defending && <GameIcon name="defend" size={15} label="Defendendo" className="absolute -top-1 -right-1 text-steel-400" />}
       {u.sneaking && <GameIcon name="sneak" size={14} label="Furtivo" className="absolute -top-1 -left-1 text-moss-400" />}
       {u.tauntedBy && <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[11px] font-bold text-amber-400" title="Provocado: persegue quem fez barulho">!</span>}

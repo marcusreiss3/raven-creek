@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { defaultGameConfig } from '../src/game/content/defaultConfig.js';
-import { createCombat, findPath, hasLOS, canStep, performAction, checkEnd, startPlayerPhase, throwObject, type CombatState } from '../src/game/combat/engine.js';
+import { createCombat, findPath, hasLOS, canStep, performAction, checkEnd, startPlayerPhase, throwObject, inCone, type CombatState } from '../src/game/combat/engine.js';
 import { runZombiePhase } from '../src/game/combat/ai.js';
 import { makeWound, computeBodyMods } from '../src/game/rules/body.js';
 import { simulate } from '../src/game/rules/simulate.js';
@@ -101,6 +101,25 @@ describe('Combate: tabuleiro', () => {
     expect(performAction(s, p.id, { type: 'attack', targetId: z.id, aimHead: false }, cfg).ok).toBe(true);
     expect(s.effects.some((e) => e.type === 'arrow' && e.characterId === 9)).toBe(true);
     expect(p.weapon!.ammo).toBe(5);
+  });
+  it('cone de visão: infectado de costas não vê; de frente vê; atacar por trás é surpresa', () => {
+    setRandomSource(() => 0.99); // nada de virar aleatoriamente nem vagar
+    const s = createCombat('street', [{ characterId: 9, name: 'P', maxAp: 6, team: 1, stamina: 100, accuracyMult: 1, meleeMult: 1, canTwoHanded: true, skills: {}, attrs: {}, armor: {} }],
+      [{ type: 'walker', behavior: 'shambler', stats: walker.stats, name: 'Caminhante' }], { context: { type: 'location', locationId: 'x' }, isNight: false });
+    const p = s.units[0]; const z = s.units[1];
+    p.x = 3; p.y = 4; z.x = 6; z.y = 4; z.hidden = false; z.aware = false; z.targetId = null;
+    z.face = [1, 0]; // olhando para a direita, você está à esquerda
+    expect(inCone(z, p)).toBe(false);
+    runZombiePhase(s, cfg); startPlayerPhase(s);
+    expect(z.targetId).toBeNull();
+    z.face = [-1, 0];
+    expect(inCone(z, p)).toBe(true);
+    z.face = [1, 0]; p.x = 5; // colado: sempre percebe
+    expect(inCone(z, p)).toBe(true);
+    p.x = 5; z.face = [1, 0]; z.targetId = null; // colado, mas pelas costas
+    setRandomSource(() => 0.01);
+    performAction(s, p.id, { type: 'attack', targetId: z.id, aimHead: false }, cfg);
+    expect(s.log.some((l) => /de surpresa/.test(l.text))).toBe(true);
   });
 });
 
