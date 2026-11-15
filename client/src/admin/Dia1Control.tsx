@@ -63,6 +63,10 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
       )}
       {r && (
         <div className="mt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <button className="btn btn-danger !min-h-[44px] !text-[16px]" disabled={!isAdmin} onClick={() => setConfirm('stop')}><GameIcon name="skull" size={18} />Encerrar o Dia 1 e começar o apocalipse</button>
+            <span className="text-[13px] text-ink-300">Todo mundo recebe a crônica e vai para o jogo normal, já no apocalipse.</span>
+          </div>
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-2">
             {info.groups.map((g) => (
               <div key={g.id} className="border border-ink-700 bg-black/20 px-3 py-2">
@@ -89,12 +93,11 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
               </div>
             </div>
           )}
-          <button className="btn btn-danger mt-3" disabled={!isAdmin} onClick={() => setConfirm('stop')}>Encerrar o Dia 1 agora</button>
         </div>
       )}
       {confirm === 'start' && <Confirm title="Começar o Dia 1 agora?" danger={false} confirmLabel="Começar" onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); start(); }}
         text={<>Entram os <b>{info.candidates}</b> personagens aprovados que estão conectados ou na sala de espera. Quem não estiver perde a sessão.</>} />}
-      {confirm === 'stop' && <Confirm title="Encerrar o Dia 1?" confirmLabel="Encerrar" onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); stop(); }}
+      {confirm === 'stop' && <Confirm title="Encerrar o Dia 1 e começar o apocalipse?" confirmLabel="Encerrar e começar" onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); stop(); }}
         text="Todo mundo recebe a crônica como está agora e volta para o jogo normal. Quem morreu na história morre de verdade." />}
     </div>
   );

@@ -1,0 +1,35 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import request from 'supertest';
+import { eq, and, sql } from 'drizzle-orm';
+import { db, schema, pool } from '../src/db/index.js';
+import { boot, makePlayer, startServer } from './helpers.js';
+import { makeWound } from '../src/game/rules/body.js';
+let srv: Awaited<ReturnType<typeof startServer>>;
+beforeAll(async () => { await boot(); srv = await startServer(); });
+afterAll(async () => { await srv.close(); await pool.end(); });
+const openWounds = async (id: number) => (await db.select().from(schema.wounds).where(and(eq(schema.wounds.characterId, id), sql`${schema.wounds.healedAt} is null`)));
+describe('ações em massa do admin', () => {
+  it('acordar, tirar mordidas, tirar ferimentos e curar', async () => {
+    const admin = await makePlayer({ role: 'admin' });
+    const p = await makePlayer();
+    const id = p.character.id;
+    const [ch] = await db.select().from(schema.characters).where(eq(schema.characters.id, id));
+    await db.update(schema.characters).set({ needs: { ...ch.needs, unconscious: true, blood: 30 } }).where(eq(schema.characters.id, id));
+    await db.insert(schema.wounds).values([{ characterId: id, ...makeWound('bite', 'left_leg', 0.4, 't') }, { characterId: id, ...makeWound('scratch', 'right_arm', 0.3, 't') }]);
+    await db.insert(schema.conditions).values({ characterId: id, kind: 'zombie_infection', durationHours: 36, discovered: false, data: { speed: 1 } });
+    const post = (k: string) => request(srv.url).post(`/api/admin/mass/${k}`).set('Cookie', admin.cookie).send({});
+    let r = await post('wake'); expect(r.body.ok).toBe(true);
+    let [c] = await db.select().from(schema.characters).where(eq(schema.characters.id, id));
+    expect(c.needs.unconscious).toBe(false); expect(c.needs.blood).toBeGreaterThanOrEqual(60);
+    r = await post('bites'); expect(r.body.affected).toBeGreaterThanOrEqual(2);
+    expect((await openWounds(id)).map((w) => w.type)).toEqual(['scratch']);
+    const inf = await db.select().from(schema.conditions).where(and(eq(schema.conditions.characterId, id), sql`${schema.conditions.resolvedAt} is null`));
+    expect(inf.length).toBe(0);
+    r = await post('wounds'); expect((await openWounds(id)).length).toBe(0);
+    await db.update(schema.characters).set({ needs: { ...c.needs, blood: 50, unconscious: true } }).where(eq(schema.characters.id, id));
+    r = await post('heal'); [c] = await db.select().from(schema.characters).where(eq(schema.characters.id, id));
+    expect(c.needs.blood).toBe(100); expect(c.needs.unconscious).toBe(false);
+    const pl = await makePlayer();
+    expect((await request(srv.url).post('/api/admin/mass/heal').set('Cookie', pl.cookie).send({})).status).toBe(403);
+  });
+});

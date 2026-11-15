@@ -68,6 +68,7 @@ export function ServerControl() {
       </div>
 
       <Dia1Control isAdmin={isAdmin} opensAt={st.opensAt} />
+      <MassActions />
 
       <div className="grid grid-cols-2 max-lg:grid-cols-1 gap-5">
         {/* Pausa */}
@@ -192,6 +193,28 @@ export function ServerControl() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+type MassKind = 'heal' | 'wounds' | 'wake' | 'bites';
+const MASS: { kind: MassKind; label: string; icon: string; text: string; done: (n: number) => string }[] = [
+  { kind: 'heal', label: 'Curar todo mundo', icon: 'aid', text: 'Fecha todos os ferimentos, tira todas as doenças e infecções, enche sangue e vitalidade e acorda quem estiver desmaiado. Vale para todos os personagens vivos.', done: (n) => `${n} personagens curados.` },
+  { kind: 'wounds', label: 'Tirar ferimentos', icon: 'bandage', text: 'Fecha todos os ferimentos abertos (cortes, arranhões, mordidas, fraturas…) de todos os personagens vivos. Doenças e infecção continuam.', done: (n) => `${n} ferimentos fechados.` },
+  { kind: 'wake', label: 'Acordar todo mundo', icon: 'wake', text: 'Acorda todos os desmaiados e repõe o sangue até pelo menos 60%. Os ferimentos continuam.', done: (n) => `${n} personagens acordados.` },
+  { kind: 'bites', label: 'Tirar mordidas e infecção', icon: 'zombie', text: 'Fecha todas as mordidas e cura a infecção zumbi de todos os personagens vivos (ninguém vai virar).', done: (n) => `${n} mordidas/infecções removidas.` },
+];
+function MassActions() {
+  const [ask, setAsk] = useState<(typeof MASS)[number] | null>(null);
+  const go = (m: (typeof MASS)[number]) => api<{ affected: number }>(`/admin/mass/${m.kind}`, { method: 'POST' })
+    .then((r) => toast(m.done(r.affected))).catch((e) => toast(e.message, 'warn'));
+  return (
+    <div className="panel p-4 mb-6">
+      <div className="label mb-2">Ações para todos os personagens</div>
+      <div className="flex flex-wrap gap-2">
+        {MASS.map((m) => <button key={m.kind} className="btn" onClick={() => setAsk(m)}><GameIcon name={m.icon} size={17} />{m.label}</button>)}
+      </div>
+      {ask && <Confirm title={`${ask.label}?`} danger={false} confirmLabel={ask.label} onCancel={() => setAsk(null)} onConfirm={() => { const m = ask; setAsk(null); go(m); }} text={ask.text} />}
     </div>
   );
 }

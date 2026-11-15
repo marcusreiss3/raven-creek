@@ -417,6 +417,43 @@ adminRouter.post('/reset/world', adminOnly, wrap(async (req, res) => {
   res.json({ ok: true, ...r, status: st });
 }));
 
+// ───────── Ações para todos os personagens vivos (curar, tirar ferimentos, acordar, tirar mordidas)
+adminRouter.post('/mass/:kind', gm, wrap(async (req, res) => {
+  const kind = z.enum(['heal', 'wounds', 'wake', 'bites']).parse(req.params.kind);
+  const alive = await db.select({ id: schema.characters.id }).from(schema.characters).where(eq(schema.characters.alive, true));
+  const ids = alive.map((c) => c.id);
+  if (!ids.length) return res.json({ ok: true, affected: 0 });
+  const now = new Date();
+  let affected = 0;
+  await db.transaction(async (tx) => {
+    const openWounds = and(inArray(schema.wounds.characterId, ids), sql`${schema.wounds.healedAt} is null`);
+    const openConds = and(inArray(schema.conditions.characterId, ids), sql`${schema.conditions.resolvedAt} is null`);
+    if (kind === 'heal' || kind === 'wounds') {
+      affected = (await tx.update(schema.wounds).set({ healedAt: now, healing: 1, bleeding: 0 }).where(openWounds).returning({ id: schema.wounds.id })).length;
+    }
+    if (kind === 'bites') {
+      const w = await tx.update(schema.wounds).set({ healedAt: now, healing: 1, bleeding: 0 }).where(and(openWounds, eq(schema.wounds.type, 'bite'))).returning({ id: schema.wounds.id });
+      const c = await tx.update(schema.conditions).set({ resolvedAt: now }).where(and(openConds, eq(schema.conditions.kind, 'zombie_infection'))).returning({ id: schema.conditions.id });
+      affected = w.length + c.length;
+    }
+    if (kind === 'heal') {
+      await tx.update(schema.conditions).set({ resolvedAt: now }).where(openConds);
+      const r = await tx.update(schema.characters).set({ needs: sql`${schema.characters.needs} || jsonb_build_object('blood', 100, 'vitality', 100, 'unconscious', false, 'bodyTemp', 37)` })
+        .where(inArray(schema.characters.id, ids)).returning({ id: schema.characters.id });
+      affected = r.length;
+    }
+    if (kind === 'wake') {
+      // acorda e repõe um pouco de sangue, senão a pessoa desmaia de novo no próximo instante
+      const r = await tx.update(schema.characters).set({ needs: sql`${schema.characters.needs} || jsonb_build_object('unconscious', false, 'blood', greatest(coalesce((${schema.characters.needs}->>'blood')::float, 100), 60))` })
+        .where(and(inArray(schema.characters.id, ids), sql`(${schema.characters.needs}->>'unconscious')::boolean is true`)).returning({ id: schema.characters.id });
+      affected = r.length;
+    }
+    await adminLog(tx, uid(req), `mass.${kind}`, 'server', 'characters', { affected });
+  });
+  for (const id of ids) pushSelf(id);
+  res.json({ ok: true, affected });
+}));
+
 // ───────── Dia 1 (prólogo pelo celular)
 adminRouter.get('/prologue', wrap(async (_req, res) => {
   const s = activePrologue();
