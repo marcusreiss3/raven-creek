@@ -26,7 +26,7 @@ import { AskCard, useNow } from './AskCard';
 export const ACT_NAMES: Record<number, string> = { 1: 'Segunda-feira comum', 2: 'Primeiros casos', 3: 'A cidade cai', 4: 'O bloqueio', 5: 'A primeira noite' };
 
 function TopStrip({ compact }: { compact?: boolean }) {
-  const { self, set } = useGame();
+  const { self, set, user } = useGame();
   const { session, group, me } = usePhone();
   const now = useNow(1000);
   const endsAt = session ? session.startedAt + (session.minutes * 60_000) / session.speed : null;
@@ -49,6 +49,7 @@ function TopStrip({ compact }: { compact?: boolean }) {
         {me?.free && <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'map' })} aria-label="Mapa"><GameIcon name="map" size={17} />{!compact && 'Mapa'}</button>}
         <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'inventory' })} aria-label="Inventário"><GameIcon name="inventory" size={17} />{!compact && 'Inventário'}</button>
         <button className="btn !px-2.5 !min-h-[36px]" onClick={() => set({ panel: 'body' })} aria-label="Corpo"><GameIcon name="body" size={17} />{!compact && 'Corpo'}</button>
+        {user && user.role !== 'player' && <a href="#/admin" className="btn !px-2.5 !min-h-[36px] text-amber-450" aria-label="Painel administrativo" title="Painel administrativo"><GameIcon name="admin" size={17} />{!compact && 'Admin'}</a>}
       </div>
       {left !== null && !compact && <div className="text-[12.5px] text-ink-300 tabular-nums shrink-0" title="Tempo até o fim do Dia 1"><GameIcon name="clock" size={14} className="inline -mt-0.5 mr-1" />{Math.floor(left / 60)}h{String(left % 60).padStart(2, '0')}</div>}
       {me?.status === 'dead' && <span className="chip text-blood-400 shrink-0">morto</span>}
