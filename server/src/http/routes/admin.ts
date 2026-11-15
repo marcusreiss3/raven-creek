@@ -26,7 +26,7 @@ import { pauseGame, resumeGame, serverStatus, setOpening } from '../../game/serv
 import { kickEveryone } from '../../game/services/serverControl.js';
 import { resetCharacters, resetWorld } from '../../game/services/reset.js';
 import { professionById } from '../../game/content/character.js';
-import { activePrologue, finishPrologue, lobbyPresent, prologueEndsAt, sessionMinute } from '../../game/services/prologue.js';
+import { activePrologue, finishPrologue, joinPrologueLate, lobbyPresent, prologueEndsAt, prologueLatecomers, sessionMinute } from '../../game/services/prologue.js';
 import { prologueCandidates, startPrologueNow } from '../../game/services/prologueControl.js';
 import { validateDia1 } from '../../game/content/dia1/validate.js';
 import { getTrack } from '../../game/content/dia1/index.js';
@@ -430,7 +430,7 @@ adminRouter.get('/prologue', wrap(async (_req, res) => {
       members: ms.filter((m) => m.groupId === g.id).map((m) => { const c = chars.find((x) => x.id === m.characterId); return { id: m.characterId, name: c ? `${c.firstName} ${c.lastName}` : '?', status: m.status, online: isUserOnline(m.userId) }; }) }));
   }
   res.json({ settings: { enabled: serverStatus().prologueEnabled, speed: serverStatus().prologueSpeed }, running: s ? { id: s.id, minute: Math.floor(sessionMinute(s)), act: s.data.act, signal: s.data.signal, speed: s.speed, startedAt: s.startedAt, endsAt: prologueEndsAt() } : null,
-    groups, lobby: lobbyPresent().length, candidates: (await prologueCandidates()).length, content: { ...v.stats, errors: v.errors, warnings: v.warnings.length } });
+    groups, latecomers: await prologueLatecomers(onlineUserIds()), lobby: lobbyPresent().length, candidates: (await prologueCandidates()).length, content: { ...v.stats, errors: v.errors, warnings: v.warnings.length } });
 }));
 adminRouter.post('/prologue/settings', adminOnly, wrap(async (req, res) => {
   const b = z.object({ enabled: z.boolean().optional(), speed: z.number().min(0.5).max(20).optional() }).parse(req.body ?? {});
@@ -443,6 +443,12 @@ adminRouter.post('/prologue/start', adminOnly, wrap(async (req, res) => {
   const r = await startPrologueNow(speed);
   await adminLog(db, uid(req), 'prologue.start', 'server', 'prologue', r);
   res.json({ ok: true, ...r });
+}));
+adminRouter.post('/prologue/join', wrap(async (req, res) => {
+  const characterId = z.number().int().positive().parse(req.body?.characterId);
+  const r = await joinPrologueLate(characterId);
+  await adminLog(db, uid(req), 'prologue.join', 'character', String(characterId), r);
+  res.json(r);
 }));
 adminRouter.post('/prologue/stop', adminOnly, wrap(async (req, res) => {
   await finishPrologue();

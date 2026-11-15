@@ -11,7 +11,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, schema, type Tx } from '../../db/index.js';
 import { AMBIENT } from '../content/dia1/ambient.js';
-import { assignFamilies, familyById, type FamMsg, type FamilySlot } from '../content/dia1/family.js';
+import { assignFamilies, familyById, FAMILIES, type FamMsg, type FamilySlot } from '../content/dia1/family.js';
 import { TIMELINE, SESSION_MINUTES, MARKS, getBeat, getTrack, trackForProfession, TRACKS, ACT_START, ACT_END, remainingInAct, mapDesignMinute, actAtMinute, isFreeTrack, freeLocalEvent, freeGlobalEvents } from '../content/dia1/index.js';
 import type { Ask, Beat, Cond, Effect, Msg, Option, Who } from '../content/dia1/types.js';
 import { REGIONS } from '../content/items.js';
@@ -40,6 +40,9 @@ export const prologueRunning = () => !!session && session.status === 'running';
 export const isPrologueMember = (characterId: number) => prologueRunning() && members.has(characterId);
 export const activePrologue = () => (prologueRunning() ? session : null);
 export function lobbyPing(characterId: number) { lobby.set(characterId, Date.now()); }
+/** Quem está na tela de espera durante o Dia 1 (chegou depois): a tela consulta a cada 15 s. */
+const waitingSeen = new Map<number, number>();
+export function waitingPing(characterId: number) { waitingSeen.set(characterId, Date.now()); }
 export const lobbyPresent = () => [...lobby.entries()].filter(([, t]) => Date.now() - t < 20_000).map(([id]) => id);
 
 /** Minuto da história (acelerado pelo `speed` do ensaio). */
@@ -841,6 +844,62 @@ export async function prologueLeave(characterId: number) {
 }
 
 /**
+ * Entrada atrasada (pela equipe): coloca no Dia 1 alguém que não estava na sala de espera na hora do começo.
+ * Entra no grupo ativo da mesma trilha (profissão) com menos gente; se não houver, no grupo ativo menor;
+ * se nenhum grupo estiver em andamento, começa um grupo novo no início da trilha. Recebe as mensagens daqui em diante.
+ */
+export async function joinPrologueLate(characterId: number) {
+  if (!session || !prologueRunning()) throw new Error('O Dia 1 não está acontecendo.');
+  const s = session;
+  if (members.has(characterId)) throw new Error('Esse personagem já está no Dia 1.');
+  const [c] = await charsOf(db, [characterId]);
+  if (!c || !c.alive) throw new Error('Personagem não encontrado ou morto.');
+  if (c.combatId) throw new Error('Esse personagem está em combate agora.');
+  if (!c.approved) await db.update(schema.characters).set({ approved: true }).where(eq(schema.characters.id, characterId));
+  const t = trackForProfession(c.profession);
+  const groups = (await db.select().from(schema.prologueGroups).where(eq(schema.prologueGroups.sessionId, s.id)))
+    .filter((g) => g.status === 'active' && !['ended', 'merged', 'free'].includes(g.phase) && !g.flags.livre);
+  const allMs = await db.select().from(schema.prologueMembers).where(eq(schema.prologueMembers.sessionId, s.id));
+  const sizeOf = (gid: number) => allMs.filter((m) => m.groupId === gid && m.status === 'active').length;
+  const pool = groups.filter((g) => g.track === t.id && sizeOf(g.id) > 0);
+  const anyAlive = groups.filter((g) => sizeOf(g.id) > 0);
+  let g = [...(pool.length ? pool : anyAlive)].sort((a, b) => sizeOf(a.id) - sizeOf(b.id))[0];
+  if (!g) {
+    const startLoc = t.startAt?.[c.profession] ?? t.location;
+    [g] = await db.insert(schema.prologueGroups).values({ sessionId: s.id, track: t.id, beatId: t.start, phase: 'say', nextAt: new Date(Date.now() + ms(6)), locationId: startLoc, flags: { sozinho: true } }).returning();
+  }
+  // família diferente das de quem já está no grupo
+  const mates = allMs.filter((m) => m.groupId === g.id);
+  const usedFams = new Set(mates.flatMap((m) => Object.keys(m.flags).filter((k) => k.startsWith('fam:')).map((k) => k.slice(4))));
+  const okAge = FAMILIES.filter((f) => (f.minAge ?? 0) <= c.age && c.age <= (f.maxAge ?? 200));
+  const fam = (okAge.find((f) => !usedFams.has(f.id)) ?? okAge[0] ?? FAMILIES[0]).id;
+  await withLock(`pgroup:${g.id}`, () => db.transaction(async (tx) => {
+    await tx.insert(schema.prologueMembers).values({ characterId, sessionId: s.id, groupId: g.id, userId: c.userId, battery: Math.round(rng.range(38, 96)), flags: { [`fam:${fam}`]: true } })
+      .onConflictDoUpdate({ target: schema.prologueMembers.characterId, set: { sessionId: s.id, groupId: g.id, userId: c.userId, status: 'active', flags: { [`fam:${fam}`]: true }, marks: [], light: false, deathCause: null, battery: Math.round(rng.range(38, 96)) } });
+    await tx.update(schema.characters).set({ locationId: g.locationId, state: 'idle', activity: 'idle', busyUntil: null, busyAction: null, followingId: null }).where(eq(schema.characters.id, characterId));
+    await tx.delete(schema.travels).where(eq(schema.travels.characterId, characterId));
+    const me = [{ characterId, userId: c.userId }];
+    await deliver(tx, me, 'system', 'cena', { text: 'Você chegou atrasado(a). O dia já começou estranho, e a conversa já está andando: daqui para a frente, você está junto.' });
+    const others = mates.filter((m) => m.status === 'active').map((m) => ({ characterId: m.characterId, userId: m.userId }));
+    if (others.length) await deliver(tx, others, 'system', 'cena', { text: `${first(nameOf(c))} chegou atrasado(a) e se juntou a vocês.` });
+  }));
+  members.add(characterId); famOf.set(characterId, fam);
+  emitToUser(c.userId, 'prologue:start', { sessionId: s.id });
+  pushSelf(characterId); pushScene(g.locationId);
+  return { ok: true, groupId: g.id, track: g.track };
+}
+
+/** Quem está vivo, aprovado ou não, conectado (ou na tela de espera) e fora do Dia 1 em andamento (para a equipe colocar dentro). */
+export async function prologueLatecomers(onlineUsers: number[]) {
+  if (!session || !prologueRunning()) return [];
+  const rows = await db.select({ id: schema.characters.id, userId: schema.characters.userId, firstName: schema.characters.firstName, lastName: schema.characters.lastName, approved: schema.characters.approved, role: schema.users.role })
+    .from(schema.characters).innerJoin(schema.users, eq(schema.users.id, schema.characters.userId)).where(eq(schema.characters.alive, true));
+  const seen = (id: number) => Date.now() - (waitingSeen.get(id) ?? 0) < 45_000;
+  return rows.filter((r) => !members.has(r.id) && (onlineUsers.includes(r.userId) || seen(r.id) || lobby.has(r.id)))
+    .map((r) => ({ id: r.id, name: `${r.firstName} ${r.lastName}`, approved: r.approved, staff: ['gm', 'moderator', 'admin'].includes(r.role ?? '') }));
+}
+
+/**
  * Proteção da história: chamada pelo tick de necessidades antes de matar alguém do Dia 1.
  * Retorna true quando o personagem NÃO deve morrer agora (atos 1–3: desmaio; atos 4–5: morte aplicada no fim).
  */
@@ -1013,4 +1072,4 @@ export async function phoneSend(characterId: number, to: number | 'grupo', text:
 }
 
 /** Só para testes: injeta o estado da sessão. */
-export function _resetPrologueMemory() { session = null; members.clear(); lobby.clear(); lastChooser.clear(); ambientLast.clear(); ambientUsed.clear(); ambientTurn.clear(); famAmbientUsed.clear(); famOf.clear(); nextGlobal.clear(); }
+export function _resetPrologueMemory() { session = null; members.clear(); lobby.clear(); waitingSeen.clear(); lastChooser.clear(); ambientLast.clear(); ambientUsed.clear(); ambientTurn.clear(); famAmbientUsed.clear(); famOf.clear(); nextGlobal.clear(); }

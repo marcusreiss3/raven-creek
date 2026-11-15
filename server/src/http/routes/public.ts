@@ -20,7 +20,7 @@ import { getRecipes } from '../../game/services/config.js';
 import { DEATH_CAUSES } from '../../game/rules/simulate.js';
 import { pushScene, pushSelf } from '../../game/services/realtime.js';
 import { playBlock, publicStatus } from '../../game/services/serverStatus.js';
-import { lobbyPing, lobbyPresent } from '../../game/services/prologue.js';
+import { lobbyPing, lobbyPresent, waitingPing } from '../../game/services/prologue.js';
 
 export const publicRouter = Router();
 const authLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: env.isTest ? 1000 : 30, standardHeaders: true, legacyHeaders: false });
@@ -56,11 +56,14 @@ publicRouter.post('/auth/logout', requireUser, async (req, res) => {
 publicRouter.get('/auth/me', async (req, res) => {
   if (!req.user) return res.json({ user: null });
   const ch = await activeCharacter(req.user.id);
+  const block = playBlock(req.user.role, ch);
+  // Quem está na tela de "o Dia 1 já começou" aparece para a equipe, que pode colocar a pessoa na sessão.
+  if (ch && block?.reason === 'prologue') waitingPing(ch.id);
   res.json({
     user: { id: req.user.id, username: req.user.username, role: req.user.role, settings: req.user.settings }, characterId: ch?.id ?? null,
     // Controle do jogo: por que não dá para jogar agora (pausa, abertura agendada, ficha pendente) e ficha recusada.
     character: ch ? { id: ch.id, name: `${ch.firstName} ${ch.lastName}`, approved: ch.approved, portrait: ch.portrait } : null,
-    block: playBlock(req.user.role, ch), server: publicStatus(),
+    block, server: publicStatus(),
     rejection: (req.user.settings as any)?.rejection ?? null,
   });
 });

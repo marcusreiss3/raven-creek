@@ -11,6 +11,7 @@ type Info = {
   settings: { enabled: boolean; speed: number };
   running: null | { id: number; minute: number; act: number; signal: number; speed: number; startedAt: string; endsAt: number | null };
   groups: Group[]; lobby: number; candidates: number;
+  latecomers?: { id: number; name: string; approved: boolean; staff: boolean }[];
   content: { trilhas?: number; encontros?: number; batidas?: number; mensagens?: number; perguntas?: number; errors: string[]; warnings: number };
 };
 const toast = (t: string, l: 'success' | 'warn' = 'success') => useGame.getState().toast(t, l);
@@ -27,6 +28,7 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
   const save = (p: { enabled?: boolean; speed?: number }) => api('/admin/prologue/settings', { body: p }).then(() => { toast('Dia 1 atualizado.'); reload(); }).catch((e) => toast(e.message, 'warn'));
   const start = () => api<{ sessionId?: number; players?: number }>('/admin/prologue/start', { body: {} }).then(() => { toast('Dia 1 começou.'); reload(); }).catch((e) => toast(e.message, 'warn'));
   const stop = () => api('/admin/prologue/stop', { method: 'POST' }).then(() => { toast('Dia 1 encerrado. Crônicas entregues.'); reload(); }).catch((e) => toast(e.message, 'warn'));
+  const join = (id: number, name: string) => api('/admin/prologue/join', { body: { characterId: id } }).then(() => { toast(`${name} entrou no Dia 1.`); reload(); }).catch((e) => toast(e.message, 'warn'));
   const c = info.content;
   return (
     <div className={`panel p-4 mb-6 border-l-4 ${r ? 'border-amber-450' : info.settings.enabled ? 'border-moss-400' : 'border-ink-600'}`}>
@@ -64,6 +66,20 @@ export function Dia1Control({ isAdmin, opensAt }: { isAdmin: boolean; opensAt: n
               </div>
             ))}
           </div>
+          {!!info.latecomers?.length && (
+            <div className="mt-3 border border-amber-450/40 bg-black/20 px-3 py-2">
+              <div className="text-[13.5px] font-bold text-ink-100">Conectados fora do Dia 1 ({info.latecomers.length})</div>
+              <p className="text-[12.5px] text-ink-300">Não estavam na sala de espera na hora do começo (ou a ficha ainda não estava aprovada). "Colocar no Dia 1" aprova a ficha se precisar e junta a pessoa a um grupo da mesma profissão; ela recebe as mensagens daqui em diante.</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {info.latecomers.map((p) => (
+                  <span key={p.id} className="inline-flex items-center gap-2 border border-ink-700 px-2 py-1 text-[13.5px]">
+                    {p.name}{p.staff ? <span className="text-ink-400">(equipe)</span> : null}{!p.approved ? <span className="text-amber-450">(ficha não aprovada)</span> : null}
+                    <button className="btn btn-moss !py-0.5 !px-2 !text-[12.5px]" onClick={() => join(p.id, p.name)}>Colocar no Dia 1</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <button className="btn btn-danger mt-3" disabled={!isAdmin} onClick={() => setConfirm('stop')}>Encerrar o Dia 1 agora</button>
         </div>
       )}
