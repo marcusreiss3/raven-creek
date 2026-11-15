@@ -3,6 +3,9 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema.js';
 import { env } from '../config/env.js';
 
+/** Tira espaços e aspas em volta de um valor colado no painel (ex.: 'valor' ou "valor"). */
+const unquote = (v: string | undefined) => v?.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+
 /** Junta de novo um certificado PEM colado num campo de uma linha só (as quebras de linha somem no painel). */
 function normalizePem(raw: string): string {
   const text = raw.replace(/\\n/g, '\n');
@@ -25,7 +28,7 @@ function normalizePem(raw: string): string {
  */
 /** Senha de DATABASE_PASSWORD. Se colarem a URL inteira ali por engano, usa a senha de dentro dela. */
 function envPassword(): string | undefined {
-  const raw = process.env.DATABASE_PASSWORD?.trim();
+  const raw = unquote(process.env.DATABASE_PASSWORD);
   if (!raw) return undefined;
   const m = raw.match(/^postgres(?:ql)?:\/\/[^:@/]*:([^@/]*)@/);
   if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
@@ -42,11 +45,11 @@ function withPassword(url: string): string {
 }
 
 function poolConfig(rawUrl: string): pg.PoolConfig {
-  const url = withPassword(rawUrl.trim());
+  const url = withPassword(unquote(rawUrl) ?? '');
   const max = Number(process.env.DB_POOL_MAX ?? 15);
   // Tira os parâmetros ssl* da URL: senão o pg tenta ler arquivos de certificado do disco ou verifica o certificado à força.
   const clean = url.replace(/([?&])(sslmode|sslcert|sslkey|sslrootcert)=[^&]*/g, '$1').replace(/[?&]+(?=&|$)/g, '').replace(/\?&/, '?');
-  const certRaw = process.env.DATABASE_CERT_B64 ? Buffer.from(process.env.DATABASE_CERT_B64, 'base64').toString('utf8') : process.env.DATABASE_CERT;
+  const certRaw = process.env.DATABASE_CERT_B64 ? Buffer.from(unquote(process.env.DATABASE_CERT_B64)!, 'base64').toString('utf8') : unquote(process.env.DATABASE_CERT);
   if (certRaw) {
     const pem = normalizePem(certRaw);
     // O certificado da Square Cloud serve como CA, certificado e chave do cliente (equivale a sslmode=verify-ca).
@@ -59,11 +62,11 @@ function poolConfig(rawUrl: string): pg.PoolConfig {
 
 /** Linha de diagnóstico no log (sem a senha): ajuda a achar erro de configuração na hospedagem. */
 function describe(rawUrl: string) {
-  const m = rawUrl.trim().match(/^postgres(?:ql)?:\/\/([^@/]*)@([^/?]+)(\/[^?]*)?/);
+  const m = (unquote(rawUrl) ?? '').match(/^postgres(?:ql)?:\/\/([^@/]*)@([^/?]+)(\/[^?]*)?/);
   if (!m) return 'DATABASE_URL não parece uma URL postgresql://usuario:senha@host:porta/banco';
   const [user, urlPw = ''] = m[1].split(':');
   const fromEnv = envPassword();
-  const urlInEnv = /^postgres(?:ql)?:\/\//.test(process.env.DATABASE_PASSWORD?.trim() ?? '');
+  const urlInEnv = /^postgres(?:ql)?:\/\//.test(unquote(process.env.DATABASE_PASSWORD) ?? '');
   const pw = fromEnv ? `DATABASE_PASSWORD${urlInEnv ? ' (era uma URL; usei a senha de dentro dela)' : ''} (${fromEnv.length} caracteres)` : /^<.*>$/.test(urlPw) ? 'AINDA É O MODELO "<password>" — defina DATABASE_PASSWORD' : urlPw ? `da própria URL (${decodeURIComponent(urlPw).length} caracteres)` : 'nenhuma';
   const cert = process.env.DATABASE_CERT || process.env.DATABASE_CERT_B64 ? 'com certificado' : 'sem certificado';
   return `usuário "${user}" em ${m[2]}, banco "${(m[3] ?? '/').slice(1) || user}", senha: ${pw}, ${cert}`;
