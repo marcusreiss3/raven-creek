@@ -131,7 +131,7 @@ import { startEngine } from '../src/game/services/vehicles.js';
 import { rng as rngMod } from '../src/game/rules/rng.js';
 describe('lote: trocar de veículo', () => {
   it('quem entra no carro e depois na moto viaja com a moto ligada', async () => {
-    const conn = CONNECTIONS.find((c) => cfg().travel.vehicleAllowedRoads.includes(c.roadType) && !c.blocked)!;
+    const conn = CONNECTIONS.find((c) => cfg().travel.vehicleAllowedRoads.includes(c.roadType))!;
     const p = await makePlayer({ locationId: conn.fromId }); const id = p.character.id;
     const mk = async (name: string) => (await db.insert(schema.vehicles).values({ type: 'sedan', name, locationId: conn.fromId, seats: 2, storage: 20, fuelMax: 40, fuel: 40, engine: 90, tires: 90, battery: 90, body: 90, speed: 12, consumption: 0.1, noise: 1, hasKey: true }).returning())[0];
     const car = await mk('Carro'); const moto = await mk('Moto');

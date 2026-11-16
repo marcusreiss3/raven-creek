@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import { parseCookie } from 'cookie';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { env } from '../config/env.js';
@@ -63,7 +63,7 @@ const actionSchemas = {
   faction_info: z.object({}), base_to_faction: z.object({ baseId: id }),
   vehicle_enter: z.object({ vehicleId: id }), vehicle_exit: z.object({}), vehicle_start: z.object({ approach: z.enum(['careful', 'normal', 'risky']).optional() }),
   vehicle_stop: z.object({}), vehicle_service: z.object({ vehicleId: id, itemId: id }), vehicle_inspect: z.object({ vehicleId: id }),
-  block_user: z.object({ userId: id }), unblock_user: z.object({ userId: id }), report: z.object({ userId: id, messageId: id.optional(), reason: z.string().min(3).max(500) }),
+  block_user: z.object({ userId: id }), unblock_user: z.object({ userId: id }), blocked_list: z.object({}).optional(), report: z.object({ userId: id, messageId: id.optional(), reason: z.string().min(3).max(500) }),
   set_frequency: z.object({ frequency: z.number().min(88).max(108).nullable() }), look: z.object({ characterId: id }), tutorial: z.object({ step: z.number().int().min(0).max(50) }),
   // Dia 1 (celular)
   prologue_state: z.object({}), prologue_vote: z.object({ askId: z.string().max(120), optionId: z.string().max(60) }), prologue_light: z.object({ on: z.boolean() }),
@@ -218,6 +218,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'vehicle_inspect': return vehicles.inspectVehicle(c, p.vehicleId);
     case 'block_user': await db.insert(schema.userBlocks).values({ userId: user.id, blockedUserId: p.userId }).onConflictDoNothing(); return { ok: true, blocked: await blockedIds(user.id) };
     case 'unblock_user': await db.delete(schema.userBlocks).where(and(eq(schema.userBlocks.userId, user.id), eq(schema.userBlocks.blockedUserId, p.userId))); return { ok: true, blocked: await blockedIds(user.id) };
+    case 'blocked_list': return { ok: true, list: await blockedList(user.id) };
     case 'report': await db.insert(schema.reports).values({ reporterUserId: user.id, targetUserId: p.userId, messageId: p.messageId ?? null, reason: p.reason }); return { ok: true };
     case 'set_frequency': await db.update(schema.characters).set({ radioFrequency: p.frequency }).where(eq(schema.characters.id, c)); pushSelf(c); return { ok: true };
     case 'look': {
@@ -239,6 +240,17 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
 /** Dia 1: quem saiu do trabalho (e não está no meio de um evento) pode andar pelo mapa. */
 const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow']);
 const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'patient_sheet', 'give', 'combat', 'combat_view', 'tutorial', 'block_user', 'unblock_user', 'report', 'set_frequency']);
+/** Quem este usuário bloqueou, com o nome do personagem mais recente de cada um (para a lista de desbloqueio). */
+async function blockedList(userId: number) {
+  const rows = await db.select({ userId: schema.userBlocks.blockedUserId, createdAt: schema.userBlocks.createdAt }).from(schema.userBlocks).where(eq(schema.userBlocks.userId, userId));
+  const out: { userId: number; name: string; since: string }[] = [];
+  for (const r of rows) {
+    const [c] = await db.select({ first: schema.characters.firstName, last: schema.characters.lastName }).from(schema.characters)
+      .where(eq(schema.characters.userId, r.userId)).orderBy(desc(schema.characters.alive), desc(schema.characters.id)).limit(1);
+    out.push({ userId: r.userId, name: c ? `${c.first} ${c.last}` : 'Jogador sem personagem', since: r.createdAt.toISOString() });
+  }
+  return out;
+}
 async function blockedIds(userId: number) { return (await db.select().from(schema.userBlocks).where(eq(schema.userBlocks.userId, userId))).map((b) => b.blockedUserId); }
 
 /** Mantém as salas de cada socket coerentes com a situação do personagem (local, viagem, combate, facção, rádio). */

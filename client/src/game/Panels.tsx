@@ -215,8 +215,33 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </Section>
       </div>
       <HudSection />
+      <BlockedSection />
       <Section title="Outros"><a className="btn" href="#/memorial">Memorial</a></Section>
     </Drawer>
+  );
+}
+
+/** Jogadores bloqueados no chat, com botão para desbloquear. */
+function BlockedSection() {
+  const blocks = useGame((s) => s.blocks);
+  const [list, setList] = useState<{ userId: number; name: string }[] | null>(null);
+  useEffect(() => { action('blocked_list', {}, { silent: true }).then((r: any) => r.ok && setList(r.list)); }, [blocks.length]);
+  const unblock = async (userId: number) => {
+    const r: any = await action('unblock_user', { userId });
+    if (r.ok) { useGame.getState().set({ blocks: r.blocked }); setList((l) => (l ?? []).filter((x) => x.userId !== userId)); }
+  };
+  return (
+    <Section title="Jogadores bloqueados">
+      {list === null ? <p className="text-[13px] text-ink-400">Carregando…</p>
+        : list.length ? (
+          <ul className="space-y-1.5">{list.map((b) => (
+            <li key={b.userId} className="flex items-center justify-between gap-2 text-[14px]">
+              <span className="truncate">{b.name}</span>
+              <button className="btn !py-1 shrink-0" onClick={() => unblock(b.userId)}>Desbloquear</button>
+            </li>
+          ))}</ul>
+        ) : <p className="text-[13px] text-ink-400">Você não bloqueou ninguém. Mensagens de quem você bloqueia no chat somem só para você.</p>}
+    </Section>
   );
 }
 
