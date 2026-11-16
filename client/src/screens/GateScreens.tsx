@@ -110,6 +110,9 @@ export function WaitingScreen({ me }: { me: Me }) {
           </div>
         )}
         {!pendingSheet && b.reason !== 'pending' && <p className="text-[14px] text-ink-300">Pode deixar esta tela aberta: ela entra no jogo sozinha quando liberar.</p>}
+        {me.user?.role && me.user.role !== 'player' && (
+          <a href="#/admin" className="btn btn-moss !min-h-[46px] !text-[16px] gap-2"><GameIcon name="admin" size={20} />Painel de administração{b.reason === 'paused' ? ' (despausar)' : ''}</a>
+        )}
       </div>
     </Backdrop>
   );
@@ -171,6 +174,7 @@ export function LobbyScreen({ me }: { me: Me }) {
         </ul>
         {waiting !== null && <div className="text-[14.5px] text-moss-400 font-semibold">{waiting} {waiting === 1 ? 'sobrevivente esperando' : 'sobreviventes esperando'}</div>}
         {b.message && <blockquote className="border-l-4 border-amber-450 bg-black/25 px-3 py-2 text-[15px] text-ink-100 italic">{b.message}</blockquote>}
+        {me.user?.role && me.user.role !== 'player' && <a href="#/admin" className="btn btn-moss gap-2"><GameIcon name="admin" size={18} />Painel de administração</a>}
       </div>
     </Backdrop>
   );
