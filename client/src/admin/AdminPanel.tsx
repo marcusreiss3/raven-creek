@@ -141,6 +141,7 @@ function Characters() {
           <Section title="Condições (incluindo ocultas)">{detail.data?.allConditions.filter((c: any) => !c.resolvedAt).map((c: any) => <div key={c.id} className="text-xs">{c.kind} · estágio {c.stage} · {Math.round(c.progress * 100)}% {c.discovered ? '' : '(oculta ao jogador)'}</div>)}</Section>
           <div className="flex flex-wrap gap-1.5">
             <button className="btn btn-moss" onClick={() => run(api(`/admin/characters/${ch.id}/heal`, { body: { reason: prompt('Motivo (auditoria):') ?? '' } })).then(refresh)}>Curar tudo</button>
+            <button className="btn btn-danger" title="Apaga a ficha de vez: sem memorial, sem corpo, sem itens. A pessoa cria outra ficha." onClick={() => confirm(`Apagar a ficha de ${ch.name} de vez? Não tem como desfazer (diferente de Matar, não vai para o memorial).`) && run(api(`/admin/characters/${ch.id}`, { method: 'DELETE', body: { reason: prompt('Motivo (auditoria):') ?? '' } })).then(() => { setSel(null); refresh(); })}>Apagar ficha</button>
             {ch.alive ? <button className="btn btn-danger" onClick={() => confirm('Matar este personagem? (auditado)') && run(api(`/admin/characters/${ch.id}/kill`, { body: { reason: prompt('Motivo:') ?? '' } })).then(refresh)}>Matar</button>
               : <button className="btn" onClick={() => run(api(`/admin/characters/${ch.id}/revive`, { body: { reason: prompt('Motivo:') ?? '' } })).then(refresh)}>Reviver (exceção)</button>}
           </div>

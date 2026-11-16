@@ -108,6 +108,24 @@ adminRouter.post('/characters/:id/kill', gm, wrap(async (req, res) => {
   await withCharacter(id, async (tx, ch) => { await killCharacter(tx, ch, String(req.body?.cause ?? 'admin')); await adminLog(tx, uid(req), 'character.kill', 'character', id, { reason: req.body?.reason ?? '' }); });
   res.json({ ok: true });
 }));
+/** Apagar a ficha de vez (sem memorial, sem corpo): some o personagem, os itens e os ferimentos; a pessoa cria outra ficha. */
+adminRouter.delete('/characters/:id', adminOnly, wrap(async (req, res) => {
+  const id = num(req.params.id);
+  const { isPrologueMember } = await import('../../game/services/prologue.js');
+  if (isPrologueMember(id)) throw new Error('Esse personagem está no Dia 1. Encerre o Dia 1 ou espere acabar.');
+  let userId = 0; let name = ''; let loc = '';
+  await withCharacter(id, async (tx, ch) => {
+    if (ch.combatId) throw new Error('Esse personagem está em combate agora. Espere acabar.');
+    userId = ch.userId; name = `${ch.firstName} ${ch.lastName}`; loc = ch.locationId;
+    await tx.delete(schema.items).where(and(eq(schema.items.ownerType, 'character'), eq(schema.items.ownerId, String(id))));
+    await tx.update(schema.characters).set({ followingId: null }).where(eq(schema.characters.followingId, id));
+    await tx.delete(schema.characters).where(eq(schema.characters.id, id));
+    await adminLog(tx, uid(req), 'character.delete', 'character', id, { name, reason: req.body?.reason ?? '' });
+  });
+  emitToUser(userId, 'force:logout', {});
+  if (loc) pushScene(loc);
+  res.json({ ok: true });
+}));
 adminRouter.post('/characters/:id/revive', adminOnly, wrap(async (req, res) => {
   const id = num(req.params.id);
   await db.transaction(async (tx) => {
