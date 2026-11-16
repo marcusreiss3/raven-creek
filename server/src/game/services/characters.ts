@@ -18,7 +18,12 @@ import { isPrologueMember } from './prologue.js';
 
 export const SPAWN_LOCATION = 'rc_main_street';
 /** Onde cada profissão começa, quando não é a Rua Principal. */
-export const SPAWN_BY_PROFESSION: Record<string, string> = { doctor: 'rc_hospital_lobby' };
+export const SPAWN_BY_PROFESSION: Record<string, string> = {
+  police: 'rc_police', soldier: 'mil_checkpoint', doctor: 'rc_hospital_lobby', nurse: 'rc_hospital_lobby',
+  firefighter: 'in_gate', engineer: 'in_factory_office', electrician: 'in_substation', mechanic: 'rc_workshop',
+  cook: 'rc_restaurant', teacher: 'rc_school_classrooms', carpenter: 'in_warehouse_b', hunter: 'fo_hunting_cabin',
+  farmer: 'fm_miller_farm', athlete: 'res_avenue', unemployed: 'rc_apartment_3b',
+};
 
 export const characterInput = z.object({
   firstName: z.string().trim().min(2).max(24), lastName: z.string().trim().min(2).max(24), age: z.number().int().min(18).max(85),

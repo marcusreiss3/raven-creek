@@ -197,11 +197,13 @@ export function ServerControl() {
   );
 }
 
-type MassKind = 'heal' | 'wounds' | 'wake' | 'bites';
+type MassKind = 'heal' | 'wounds' | 'wake' | 'bites' | 'home' | 'home_all';
 const MASS: { kind: MassKind; label: string; icon: string; text: string; done: (n: number) => string }[] = [
   { kind: 'heal', label: 'Curar todo mundo', icon: 'aid', text: 'Fecha todos os ferimentos, tira todas as doenças e infecções, enche sangue e vitalidade e acorda quem estiver desmaiado. Vale para todos os personagens vivos.', done: (n) => `${n} personagens curados.` },
   { kind: 'wounds', label: 'Tirar ferimentos', icon: 'bandage', text: 'Fecha todos os ferimentos abertos (cortes, arranhões, mordidas, fraturas…) de todos os personagens vivos. Doenças e infecção continuam.', done: (n) => `${n} ferimentos fechados.` },
   { kind: 'wake', label: 'Acordar todo mundo', icon: 'wake', text: 'Acorda todos os desmaiados e repõe o sangue até pelo menos 60%. Os ferimentos continuam.', done: (n) => `${n} personagens acordados.` },
+  { kind: 'home', label: 'Levar para o lugar da profissão', icon: 'route', text: 'Quem ainda está na Rua Principal vai para o lugar da profissão (policial na Delegacia, médico e enfermeiro no Hospital, cozinheiro na Lanchonete, professor na Escola, mecânico na Oficina…). Quem está em combate, viajando ou no Dia 1 fica onde está.', done: (n) => `${n} personagens levados para o lugar da profissão.` },
+  { kind: 'home_all', label: 'Levar TODOS para o lugar da profissão', icon: 'route', text: 'Leva TODO mundo para o lugar da profissão, mesmo quem já tinha ido para outro lugar. Quem está em combate, viajando ou no Dia 1 fica onde está.', done: (n) => `${n} personagens levados para o lugar da profissão.` },
   { kind: 'bites', label: 'Tirar mordidas e infecção', icon: 'zombie', text: 'Fecha todas as mordidas e cura a infecção zumbi de todos os personagens vivos (ninguém vai virar).', done: (n) => `${n} mordidas/infecções removidas.` },
 ];
 function MassActions() {

@@ -32,4 +32,18 @@ describe('ações em massa do admin', () => {
     const pl = await makePlayer();
     expect((await request(srv.url).post('/api/admin/mass/heal').set('Cookie', pl.cookie).send({})).status).toBe(403);
   });
+  it('levar cada um para o lugar da profissão', async () => {
+    const admin = await makePlayer({ role: 'admin' });
+    const pol = await makePlayer({ profession: 'police', locationId: 'rc_main_street' });
+    const cook = await makePlayer({ profession: 'cook', locationId: 'rc_main_street' });
+    const elsewhere = await makePlayer({ profession: 'mechanic', locationId: 'rc_police' });
+    const post = (k: string) => request(srv.url).post(`/api/admin/mass/${k}`).set('Cookie', admin.cookie).send({});
+    expect((await post('home')).body.ok).toBe(true);
+    const loc = async (id: number) => (await db.select().from(schema.characters).where(eq(schema.characters.id, id)))[0].locationId;
+    expect(await loc(pol.character.id)).toBe('rc_police');
+    expect(await loc(cook.character.id)).toBe('rc_restaurant');
+    expect(await loc(elsewhere.character.id)).toBe('rc_police'); // não estava na Rua Principal: fica
+    await post('home_all');
+    expect(await loc(elsewhere.character.id)).toBe('rc_workshop');
+  });
 });

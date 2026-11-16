@@ -435,9 +435,30 @@ adminRouter.post('/reset/world', adminOnly, wrap(async (req, res) => {
   res.json({ ok: true, ...r, status: st });
 }));
 
+/** Leva cada personagem para o lugar da profissão (só quem está parado: fora de combate, viagem e Dia 1). */
+async function sendHome(onlySpawn: boolean, by: number) {
+  const { SPAWN_BY_PROFESSION, SPAWN_LOCATION } = await import('../../game/services/characters.js');
+  const { isPrologueMember } = await import('../../game/services/prologue.js');
+  const rows = await db.select().from(schema.characters).where(eq(schema.characters.alive, true));
+  const moved: number[] = []; const places = new Set<string>();
+  for (const c of rows) {
+    const dest = SPAWN_BY_PROFESSION[c.profession];
+    if (!dest || !getLocation(dest) || c.locationId === dest) continue;
+    if (onlySpawn && c.locationId !== SPAWN_LOCATION) continue;
+    if (c.combatId || c.state === 'combat' || c.state === 'traveling' || isPrologueMember(c.id)) continue;
+    await db.update(schema.characters).set({ locationId: dest, state: 'idle', activity: 'idle', busyUntil: null, busyAction: null, followingId: null }).where(eq(schema.characters.id, c.id));
+    places.add(c.locationId); places.add(dest); moved.push(c.id);
+  }
+  await adminLog(db, by, onlySpawn ? 'mass.home' : 'mass.home_all', 'server', 'characters', { affected: moved.length });
+  for (const id of moved) pushSelf(id);
+  for (const p of places) pushScene(p);
+  return { ok: true, affected: moved.length };
+}
+
 // ───────── Ações para todos os personagens vivos (curar, tirar ferimentos, acordar, tirar mordidas)
 adminRouter.post('/mass/:kind', gm, wrap(async (req, res) => {
-  const kind = z.enum(['heal', 'wounds', 'wake', 'bites']).parse(req.params.kind);
+  const kind = z.enum(['heal', 'wounds', 'wake', 'bites', 'home', 'home_all']).parse(req.params.kind);
+  if (kind === 'home' || kind === 'home_all') return res.json(await sendHome(kind === 'home', uid(req)));
   const alive = await db.select({ id: schema.characters.id }).from(schema.characters).where(eq(schema.characters.alive, true));
   const ids = alive.map((c) => c.id);
   if (!ids.length) return res.json({ ok: true, affected: 0 });
