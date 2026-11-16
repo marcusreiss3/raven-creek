@@ -54,14 +54,23 @@ export async function tickCharacter(characterId: number, now = Date.now()) {
     };
     // Desconectado: o corpo fica parado (fome, sede, sono, ferimentos, infecção, doenças, cicatrização e energia).
     // Só evolui, em velocidade normal, enquanto o jogador está conectado. Viagens seguem normais.
-    if (!ctx.online) dt = dt * Math.max(0, Math.min(1, cfg().needs.offlineBodyTimeMultiplier ?? 0));
+    let offlineMs = 0; // tempo desconectado neste intervalo (só a energia anda nele)
+    if (!ctx.online) { offlineMs = dt; dt = dt * Math.max(0, Math.min(1, cfg().needs.offlineBodyTimeMultiplier ?? 0)); }
     else {
       // Acabou de conectar: só conta o tempo desde a conexão (o período desconectado não é cobrado de uma vez).
       const since = onlineSince(ch.userId);
       const offMult = Math.max(0, Math.min(1, cfg().needs.offlineBodyTimeMultiplier ?? 0));
-      if (since && since > ch.lastTickAt.getTime()) dt = Math.max(0, now - since) + (since - ch.lastTickAt.getTime()) * offMult;
+      if (since && since > ch.lastTickAt.getTime()) { offlineMs = Math.min(dt, since - ch.lastTickAt.getTime()); dt = Math.max(0, now - since) + (since - ch.lastTickAt.getTime()) * offMult; }
     }
-    let needs = ch.needs; let ws: WoundLike[] = wounds; let all: ConditionLike[] = conds;
+    let needs = ch.needs;
+    // Desconectado, a energia volta como se estivesse descansando (ou dormindo), na metade da velocidade.
+    if (offlineMs > 0 && !needs.unconscious) {
+      const nc = cfg().needs; const h = offlineMs / 3_600_000;
+      const mult = ch.activity === 'sleeping' ? nc.energyRegenSleepingMultiplier : nc.energyRegenRestingMultiplier;
+      const starving = needs.hunger > 80 || needs.thirst > 80 || needs.sleepiness > 90 ? 0.3 : 1;
+      const gain = nc.energyRegenPerHour * h * mult * starving * (bedBonus || 1) * (nc.offlineEnergyMultiplier ?? 0.5);
+      if (gain > 0) needs = { ...needs, energy: Math.min(100, needs.energy + gain) };
+    } let ws: WoundLike[] = wounds; let all: ConditionLike[] = conds;
     const messages: string[] = [];
     let death: string | null = null; let fainted = false; let woke = false;
     while (dt > 0 && !death) {

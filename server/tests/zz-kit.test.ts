@@ -58,3 +58,17 @@ describe('caçador com arco', () => {
     expect(h.character.knownRecipes).toContain('arrow_craft');
   });
 });
+
+import { tickCharacter } from '../src/game/services/tick.js';
+describe('energia desconectado', () => {
+  it('volta na metade da velocidade de descansar; fome fica parada', async () => {
+    const p = await makePlayer();
+    const [c] = await db.select().from(schema.characters).where(eq(schema.characters.id, p.character.id));
+    const now = Date.now();
+    await db.update(schema.characters).set({ needs: { ...c.needs, energy: 0, hunger: 20 }, lastTickAt: new Date(now - 30 * 60_000), activity: 'idle' }).where(eq(schema.characters.id, c.id));
+    await tickCharacter(c.id, now);
+    const [d] = await db.select().from(schema.characters).where(eq(schema.characters.id, c.id));
+    expect(d.needs.energy).toBeGreaterThan(45); expect(d.needs.energy).toBeLessThan(55); // 30 min offline ≈ metade da barra
+    expect(d.needs.hunger).toBe(20);
+  });
+});

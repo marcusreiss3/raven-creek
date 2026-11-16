@@ -28,6 +28,8 @@ export const defaultGameConfig = {
      *  sangramento, infecção, doenças, cicatrização e energia. 0 = o corpo fica congelado offline e só evolui
      *  (em velocidade normal) enquanto o jogador está conectado. Viagens NÃO são afetadas. */
     offlineBodyTimeMultiplier: 0,
+    /** Desconectado, a energia (só ela) volta como descansando/dormindo, nesta fração da velocidade (0,5 = demora o dobro). */
+    offlineEnergyMultiplier: 0.5,
     starvationDamageThreshold: 85,
     dehydrationDamageThreshold: 85,
     bloodRegenPerHour: 3,
