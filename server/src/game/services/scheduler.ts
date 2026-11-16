@@ -37,6 +37,8 @@ export async function processJobs(limit = 50) {
       else if (j.kind === 'project_work') await completeProjectWork(j.id, j.characterId!, String(j.payload.projectId));
       else if (j.kind === 'hunt_complete') await completeOutdoorJob(j.id, j.characterId!, 'hunt', await dogHuntBonus(j.characterId!));
       else if (j.kind === 'fish_complete') await completeOutdoorJob(j.id, j.characterId!, 'fish');
+      else if (j.kind === 'dog_scavenge') await (await import('./dogs.js')).completeDogScavenge(j.characterId!, Number(j.payload.dogId), String(j.payload.locationId));
+      else if (j.kind === 'hide_end') await (await import('./hordes.js')).stopHiding(j.characterId!, j.id);
       else if (j.kind === 'project_claim') await completeClaimPower(j.id, j.characterId!, Number(j.payload.factionId));
       await db.update(schema.jobs).set({ status: 'done' }).where(eq(schema.jobs.id, j.id));
     } catch (e) {

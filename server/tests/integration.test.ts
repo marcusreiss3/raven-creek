@@ -548,9 +548,9 @@ describe('Bilhetes, mural e mortos que levantam', () => {
       const ch = await charRow(p.character.id);
       const got = await db.transaction((tx) => st.maybeFindNote(tx, ch));
       expect(got).toBe(f.title);
-      const again = await db.transaction((tx) => st.maybeFindNote(tx, ch)); // já achado: não repete
-      expect(again).toBeNull();
-      const note = (await inv(p.character.id)).find((i) => i.defId === 'note')!;
+      const again = await db.transaction((tx) => st.maybeFindNote(tx, ch)); // já achado: não repete (pode haver outra pista no mesmo lugar)
+      expect(again).not.toBe(f.title);
+      const note = (await inv(p.character.id)).find((i) => i.defId === 'note' && i.data.fragmentId === f.id)!;
       expect(note.data.fragmentId).toBe(f.id);
     }
     const list = await st.listMysteries();

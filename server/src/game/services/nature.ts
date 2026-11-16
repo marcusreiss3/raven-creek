@@ -52,9 +52,16 @@ export async function lightFire(characterId: number, fuelItemId: number) {
     const items = await itemsOf(tx, 'character', ch.id);
     const [cur] = await tx.select().from(schema.campfires).where(eq(schema.campfires.locationId, ch.locationId)).for('update');
     const burning = !!cur && cur.fuelUntil > new Date();
-    if (!burning && !hasTool(items, 'fire')) fail('Você precisa de um isqueiro ou fósforos.');
     const it = items.find((i) => i.id === fuelItemId);
     if (!it || fuelOf(it.defId) <= 0) fail('Escolha algo que queime: lenha, tora, tábua…');
+    if (!burning && !hasTool(items, 'fire')) {
+      // sem isqueiro: quem sabe sobreviver acende na fricção, só com madeira
+      const surv = ch.skills.survival?.level ?? 0;
+      if (surv < 2) fail('Você precisa de um isqueiro ou fósforos. (Com Sobrevivência 2 dá para acender só com madeira, na fricção.)');
+      const wood = ['plank', 'log', 'firewood', 'stick', 'branches'].includes(it!.defId) || /madeira|lenha|tora|tábua|galho/i.test(itemDef(it!.defId)?.name ?? '');
+      if (!wood) fail('Sem isqueiro, só dá para acender esfregando madeira: use tábua, tora ou lenha.');
+      if (!rng.chance(Math.min(0.9, 0.45 + (surv - 2) * 0.1))) fail('Você esfrega a madeira até as mãos doerem, sai fumaça… mas não pega. Tente de novo.');
+    }
     const w = clock().weather;
     if (!burning && !getLocation(ch.locationId)!.indoor && w === 'storm' && rng.chance(0.6)) {
       // a transação é desfeita pelo erro: o combustível não se perde, só a tentativa

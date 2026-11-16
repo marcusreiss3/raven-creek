@@ -151,9 +151,9 @@ function MobileTopBar({ onNeeds }: { onNeeds: () => void }) {
 function NeedsStrip({ needs, onNeeds, critical, protectedUntil, inline }: { needs: ReturnType<typeof buildNeeds>; onNeeds: () => void; critical: number; protectedUntil: boolean; inline?: boolean }) {
   return (
   <button onClick={onNeeds} className={inline ? 'flex-1 min-w-0 flex items-center gap-3 h-full active:bg-black/30' : 'w-full flex items-center gap-3.5 pl-3 pr-2 h-[40px] border-t border-black/60 active:bg-black/30'} aria-label={`Ver como você está${critical ? `: ${critical} ${critical > 1 ? 'pontos críticos' : 'ponto crítico'}` : ''}`}>
-      <span className="flex items-center gap-3.5 min-w-0 overflow-hidden">
-        {needs.map((x) => (
-          <span key={x.key} className="w-8 shrink-0 flex flex-col items-center gap-[3px]" aria-hidden>
+      <span className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+        {[...needs].sort((a, b) => Number(!!b.critical) - Number(!!a.critical)).map((x) => (
+          <span key={x.key} className="w-7 shrink-0 flex flex-col items-center gap-[3px]" aria-hidden>
             <span className="relative" style={{ color: x.critical ? '#e0554a' : '#cfc9b2' }}>
               <GameIcon name={x.icon} size={17} />
               {x.critical && <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-blood-500 pulse-red" />}

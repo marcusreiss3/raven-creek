@@ -24,7 +24,13 @@ export async function enterVehicle(characterId: number, vehicleId: number) {
   return withCharacter(characterId, async (tx, ch) => {
     assertCanAct(ch);
     const v = await vehicleHere(tx, ch, vehicleId);
-    if (v.driverId && v.driverId !== ch.id) fail('Já há alguém ao volante. Siga o motorista para ir como passageiro.');
+    if (v.driverId && v.driverId !== ch.id) {
+      // motorista que morreu, saiu do lugar ou já desembarcou não segura mais o volante
+      const [d] = await tx.select({ alive: schema.characters.alive, locationId: schema.characters.locationId, vehicleId: schema.characters.vehicleId, state: schema.characters.state }).from(schema.characters).where(eq(schema.characters.id, v.driverId));
+      const stale = !d || !d.alive || d.vehicleId !== v.id || d.locationId !== v.locationId || d.state === 'traveling';
+      if (!stale) fail('Já há alguém ao volante. Siga o motorista para ir como passageiro.');
+      await tx.update(schema.vehicles).set({ driverId: null, running: false }).where(eq(schema.vehicles.id, v.id));
+    }
     if (v.factionId) { const [m] = await tx.select().from(schema.factionMembers).where(eq(schema.factionMembers.characterId, ch.id)); if (!m || m.factionId !== v.factionId) fail('Este veículo pertence a outra facção.'); }
     if (ch.amputations.some((a) => a.includes('leg') || a.includes('foot'))) fail('Sem uma das pernas você não consegue dirigir.');
     await tx.update(schema.vehicles).set({ driverId: ch.id }).where(eq(schema.vehicles.id, v.id));

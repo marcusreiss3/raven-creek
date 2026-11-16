@@ -81,3 +81,35 @@ export const LOOT_TABLES: { id: string; name: string; entries: LootEntry[] }[] =
   { id: 'church', name: 'Igreja / capela', entries: [ e('water_bottle', 3), e('canned_beans', 3), e('crackers', 3), e('rag', 4), e('bandage', 2), e('lighter', 2), e('family_photo', 2) ] },
   { id: 'sewer', name: 'Esgoto', entries: [ e('dirty_water', 6), e('scrap_metal', 4), e('pipe', 3), e('rag', 3), e('spoiled_food', 2) ] },
 ];
+
+/** Roupas de proteção (jaquetas, luvas e botinas de trabalho) espalhadas pelos lugares onde fariam sentido. */
+export const PROTECTIVE_GEAR_LOOT: Record<string, LootEntry[]> = {
+  residential: [e('denim_jacket', 2), e('work_gloves', 1.5), e('work_boots', 1)],
+  residential_hunter: [e('work_jacket', 1.5), e('work_boots', 2)],
+  street: [e('denim_jacket', 0.8)],
+  farm: [e('work_jacket', 2), e('work_gloves', 2), e('work_boots', 2), e('denim_jacket', 1.5)],
+  farm_tools: [e('work_gloves', 3), e('work_boots', 1.5), e('work_jacket', 1.5)],
+  building_supply: [e('work_gloves', 4), e('work_jacket', 2), e('work_boots', 2)],
+  industrial: [e('work_jacket', 2), e('work_boots', 2), e('work_gloves', 2)],
+  warehouse: [e('work_gloves', 2), e('work_boots', 1.5)],
+  garage: [e('biker_jacket', 0.5), e('work_gloves', 2), e('denim_jacket', 1.5)],
+  workshop: [e('biker_jacket', 0.6), e('work_gloves', 2), e('work_jacket', 1.5)],
+  police: [e('biker_jacket', 0.4)],
+};
+for (const t of LOOT_TABLES) for (const x of PROTECTIVE_GEAR_LOOT[t.id] ?? []) if (!t.entries.some((y) => y.itemId === x.itemId)) t.entries.push(x);
+
+/** Binóculos, rojões e despertadores: o que serve para vigiar e desviar hordas. */
+export const HORDE_GEAR_LOOT: Record<string, LootEntry[]> = {
+  residential: [e('firecrackers', 1.2), e('alarm_clock', 2)],
+  residential_hunter: [e('binoculars', 2)],
+  police: [e('binoculars', 1)],
+  military: [e('binoculars', 1.5)],
+  ranger: [e('binoculars', 2)],
+  camp: [e('binoculars', 1), e('firecrackers', 1)],
+  store: [e('firecrackers', 1.5), e('alarm_clock', 1)],
+  supermarket: [e('firecrackers', 1)],
+  gas_station: [e('firecrackers', 1)],
+  office: [e('alarm_clock', 1.5)],
+  school: [e('alarm_clock', 1)],
+};
+for (const t of LOOT_TABLES) for (const x of HORDE_GEAR_LOOT[t.id] ?? []) if (!t.entries.some((y) => y.itemId === x.itemId)) t.entries.push(x);

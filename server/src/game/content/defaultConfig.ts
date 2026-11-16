@@ -13,8 +13,8 @@ export const defaultGameConfig = {
     startHour: 8,
   },
   needs: {
-    hungerPerHour: 7,
-    thirstPerHour: 8,
+    hungerPerHour: 12,
+    thirstPerHour: 15,
     sleepinessPerHour: 3,
     sleepRecoveryPerHour: 30,
     staminaRegenPerMinute: 8,
@@ -24,6 +24,8 @@ export const defaultGameConfig = {
     energyRegenRestingMultiplier: 10,
     energyRegenSleepingMultiplier: 12,
     stressDecayPerHour: 4,
+    /** Dormindo, o estresse cai este tanto de vezes mais rápido. */
+    stressSleepMultiplier: 4,
     /** Velocidade do "tempo do corpo" enquanto o jogador está desconectado: fome, sede, sono, ferimentos,
      *  sangramento, infecção, doenças, cicatrização e energia. 0 = o corpo fica congelado offline e só evolui
      *  (em velocidade normal) enquanto o jogador está conectado. Viagens NÃO são afetadas. */
@@ -84,7 +86,10 @@ export const defaultGameConfig = {
     contaminationPerHourUntreated: 0.05,
     infectionContaminationThreshold: 0.6,
     woundInfectionChancePerHour: 0.08,
-    healingPerHourBase: 0.05,
+    healingPerHourBase: 0.6,
+    /** Dormindo o corpo cicatriza bem mais rápido (cama na base multiplica de novo); descansando, um pouco. */
+    sleepHealingMultiplier: 2.5,
+    restHealingMultiplier: 1.5,
     fractureHealingWithoutSplint: 0.15,
     /** Abaixo disto de sangue o personagem desmaia; abaixo de deathBlood morre. */
     faintBlood: 40,
@@ -226,10 +231,10 @@ export const defaultGameConfig = {
   /** Fogueiras, caça e pesca. */
   nature: {
     fireMaxMinutes: 480,
-    fireWarmth: 16,
+    fireWarmth: 20,
     /** Fumaça: multiplicador da chance de infectados acharem quem está no local. */
     smokeThreatMultiplier: 1.5,
-    huntMinutes: 30, huntEnergy: 18,
+    huntMinutes: 15, huntEnergy: 18,
     fishMinutes: 20, fishEnergy: 10,
   },
   /** Vícios: dependência (≥ addictedAt vicia), fissura por hora, estresse na abstinência e quanto cada uso vicia. */
@@ -249,7 +254,11 @@ export const defaultGameConfig = {
   },
   hordes: {
     enabled: true,
-    moveEveryMinutes: 12,
+    moveEveryMinutes: 30,
+    /** Binóculo: vê hordas a até N trechos. Rádio: vê todas. Sem nada: só as que estão a 1 trecho (pelos gemidos). */
+    binocularHops: 2,
+    lureCooldownMinutes: 20,
+    hideMinutes: 40,
     spawnChancePerHour: 0.15,
     maxActive: 3,
     structureDamagePerZombie: 0.8,

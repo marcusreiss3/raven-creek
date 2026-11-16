@@ -3,9 +3,10 @@ import { db, schema, type Tx } from '../../db/index.js';
 import { clamp, rng } from '../rules/rng.js';
 import { assertCanAct, withCharacter } from './characters.js';
 import { systemEmote } from './chat.js';
-import { cfg, itemDef } from './config.js';
+import { cfg, clock, getLootTable, itemDef } from './config.js';
 import { fail, gameLog } from './infra.js';
-import { consumeItem, itemsOf, type CharRow } from './inventory.js';
+import { addItem, carryInfo, consumeItem, itemsOf, type CharRow } from './inventory.js';
+import { findCount, rollEntry } from '../rules/loot.js';
 import { isUserOnline, notify, pushScene, pushSelf } from './realtime.js';
 import { giveXp } from './survival.js';
 import { getLocation } from './world.js';
@@ -16,7 +17,8 @@ import { getLocation } from './world.js';
  * mordem infectados no combate — e podem se ferir e morrer. Mal alimentados, perdem a lealdade e vão embora.
  */
 type Dog = typeof schema.companions.$inferSelect;
-const D = () => ({ strayChanceOnExplore: 0.04, maxStrays: 3, hungerPerHour: 3, threatMultiplier: 0.6, findBonus: 0.2, combatAssistChance: 0.35, ...((cfg() as any).dogs ?? {}) });
+const D = () => ({ strayChanceOnExplore: 0.04, maxStrays: 3, hungerPerHour: 3, threatMultiplier: 0.6, findBonus: 0.2, combatAssistChance: 0.35,
+  scavengeMinutes: 8, scavengeCooldownMinutes: 45, treatCooldownMinutes: 15, petCooldownMinutes: 60, ...((cfg() as any).dogs ?? {}) });
 const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 const STRAY_CATEGORIES = new Set(['house', 'street', 'farm', 'field', 'yard', 'camp', 'garage', 'commercial', 'road', 'gas_station']);
 const NAMES = ['Rex', 'Bolt', 'Luna', 'Toby', 'Mel', 'Thor', 'Nina', 'Duke', 'Pipoca', 'Faísca', 'Sombra', 'Bento'];
@@ -40,7 +42,11 @@ export async function ownedDog(characterId: number, tx: Tx = db) {
   const [d] = await tx.select().from(schema.companions).where(and(eq(schema.companions.ownerCharacterId, characterId), eq(schema.companions.status, 'owned')));
   return d ?? null;
 }
-const effective = (d: Dog | null) => !!d && d.health >= 20;
+/** Fora, farejando sozinho: não ajuda em nada até voltar. */
+const isAway = (d: Pick<Dog, 'data'>) => Number(d.data.awayUntil ?? 0) > Date.now();
+const effective = (d: Dog | null) => !!d && d.health >= 20 && !isAway(d);
+/** O cachorro está aqui e em condições de ajudar (combate, caça, achados). */
+export const dogAvailable = (d: Dog | null) => effective(d);
 
 /** Bônus de achados ao vasculhar com o cachorro junto. */
 export async function dogFindBonus(characterId: number, tx: Tx = db) { return effective(await ownedDog(characterId, tx)) ? 1 + D().findBonus : 1; }
@@ -49,14 +55,14 @@ export async function dogHuntBonus(characterId: number) { return effective(await
 export async function dogThreatMultiplier(characterIds: number[], tx: Tx = db) {
   if (!characterIds.length) return 1;
   const dogs = await tx.select().from(schema.companions).where(and(inArray(schema.companions.ownerCharacterId, characterIds), eq(schema.companions.status, 'owned')));
-  return dogs.some((d) => d.health >= 20) ? D().threatMultiplier : 1;
+  return dogs.some((d) => effective(d)) ? D().threatMultiplier : 1;
 }
 
 /** Cachorros visíveis num local: de rua ali + companheiros de quem está ali. */
 export async function dogsAt(locationId: string, presentCharacterIds: number[], tx: Tx = db) {
   const strays = await tx.select().from(schema.companions).where(and(eq(schema.companions.locationId, locationId), eq(schema.companions.status, 'stray')));
   const owned = presentCharacterIds.length ? await tx.select().from(schema.companions).where(and(inArray(schema.companions.ownerCharacterId, presentCharacterIds), eq(schema.companions.status, 'owned'))) : [];
-  return [...strays, ...owned].map((d) => ({ id: d.id, name: d.status === 'stray' ? 'Cachorro de rua' : d.name, ownerId: d.ownerCharacterId, status: d.status, look: String(d.data.look ?? ''), variant: dogVariant(d), health: Math.round(d.health), trust: Math.round(d.trust) }));
+  return [...strays, ...owned].map((d) => ({ id: d.id, name: d.status === 'stray' ? 'Cachorro de rua' : d.name, ownerId: d.ownerCharacterId, status: d.status, look: String(d.data.look ?? ''), variant: dogVariant(d), health: Math.round(d.health), trust: Math.round(d.trust), away: isAway(d) }));
 }
 
 export async function maybeSpawnStray(tx: Tx, locationId: string) {
@@ -194,5 +200,127 @@ export async function dogAfterCombat(tx: Tx, characterId: number, rounds: number
 export async function dogView(characterId: number, tx: Tx = db) {
   const d = await ownedDog(characterId, tx);
   if (!d) return null;
-  return { id: d.id, name: d.name, look: String(d.data.look ?? ''), variant: dogVariant(d), health: Math.round(d.health), hunger: Math.round(d.hunger), loyalty: Math.round(d.loyalty) };
+  const iso = (k: string) => (Number(d.data[k] ?? 0) > Date.now() ? new Date(Number(d.data[k])).toISOString() : null);
+  return {
+    id: d.id, name: d.name, look: String(d.data.look ?? ''), variant: dogVariant(d), health: Math.round(d.health), hunger: Math.round(d.hunger), loyalty: Math.round(d.loyalty),
+    awayUntil: iso('awayUntil'), scavengeReadyAt: iso('scavengeReadyAt'), treatReadyAt: iso('treatReadyAt'), petReadyAt: iso('petReadyAt'),
+  };
+}
+
+// ───────────────────────── Cuidar, farejar, carinho ─────────────────────────
+/** Quanto cada item médico recupera da saúde do cachorro. */
+const DOG_MEDS: Record<string, number> = {
+  first_aid_kit: 45, surgical_supplies: 35, suture_kit: 30, antibiotics: 25, bandage: 20, splint: 15, rag: 12, antiseptic: 10, painkillers: 8, dirty_rag: 6,
+};
+export const dogMedItems = () => Object.keys(DOG_MEDS);
+
+/** Tratar o cachorro com um item médico (precisa de um intervalo entre curativos). */
+export async function treatDog(characterId: number, itemId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
+    const d = await ownedDog(ch.id, tx); if (!d) fail('Você não tem cachorro.');
+    if (isAway(d!)) fail(`${d!.name} ainda não voltou.`);
+    if (d!.health >= 100) fail(`${d!.name} está inteiro.`);
+    const wait = Number(d!.data.treatReadyAt ?? 0) - Date.now();
+    if (wait > 0) fail(`Deixe o último curativo de ${d!.name} assentar. Mais ${Math.ceil(wait / 60000)} min.`);
+    const items = await itemsOf(tx, 'character', ch.id);
+    const it = items.find((i) => i.id === itemId);
+    const base = it ? DOG_MEDS[it.defId] : undefined;
+    if (!it || !base) fail('Use um item médico: curativo, trapo, kit de primeiros socorros, antibiótico…');
+    await consumeItem(tx, it!.id, 'character', ch.id, 1);
+    const med = ch.skills.medical?.level ?? 0;
+    const gain = base! * (1 + med * 0.08) * (ch.profession === 'doctor' || ch.profession === 'nurse' || ch.profession === 'hunter' || ch.profession === 'farmer' ? 1.25 : 1);
+    const health = clamp(d!.health + gain, 0, 100);
+    await tx.update(schema.companions).set({ health, loyalty: clamp(d!.loyalty + 3, 0, 100), data: { ...d!.data, treatReadyAt: Date.now() + D().treatCooldownMinutes * 60000 } }).where(eq(schema.companions.id, d!.id));
+    const name = itemDef(it!.defId)?.name.toLowerCase() ?? 'o curativo';
+    await systemEmote(ch.locationId, `${fullName(ch)} cuida dos machucados de ${d!.name} com ${name}. Ele lambe a mão de quem ajudou.`);
+    await giveXp(tx, ch, 'medical', 2, `dog_treat_${d!.id}`);
+    notify(ch.userId, `${d!.name}: saúde ${Math.round(d!.health)}% → ${Math.round(health)}%.`, 'success', 'dog');
+    pushSelf(ch.id);
+    return { ok: true, health: Math.round(health) };
+  });
+}
+
+/** Mandar o cachorro farejar o local sozinho: traz coisas pequenas que achar. Tem tempo de recarga. */
+export async function sendDogScavenge(characterId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true });
+    if (ch.state === 'traveling') fail('Na estrada não dá para mandar o cachorro sozinho.');
+    const d = await ownedDog(ch.id, tx); if (!d) fail('Você não tem cachorro.');
+    if (isAway(d!)) fail(`${d!.name} já está farejando por aí.`);
+    if (d!.health < 40) fail(`${d!.name} está machucado demais para sair sozinho. Cuide dele primeiro.`);
+    if (d!.hunger > 75) fail(`${d!.name} está com fome demais e não sai do seu lado. Dê comida antes.`);
+    const wait = Number(d!.data.scavengeReadyAt ?? 0) - Date.now();
+    if (wait > 0) fail(`${d!.name} ainda está cansado da última volta. Mais ${Math.ceil(wait / 60000)} min.`);
+    const loc = getLocation(ch.locationId);
+    if (!loc?.lootTableId) fail('Não tem nada aqui para farejar.');
+    const runAt = new Date(Date.now() + D().scavengeMinutes * 60000);
+    await tx.insert(schema.jobs).values({ kind: 'dog_scavenge', characterId: ch.id, runAt, payload: { dogId: d!.id, locationId: ch.locationId } });
+    await tx.update(schema.companions).set({ data: { ...d!.data, awayUntil: runAt.getTime(), scavengeReadyAt: Date.now() + D().scavengeCooldownMinutes * 60000 } }).where(eq(schema.companions.id, d!.id));
+    await systemEmote(ch.locationId, `${fullName(ch)} faz um sinal e ${d!.name} sai farejando pelos cantos de ${loc!.name}.`);
+    pushSelf(ch.id); pushScene(ch.locationId);
+    return { ok: true, minutes: D().scavengeMinutes };
+  });
+}
+
+/** Itens que um cachorro consegue carregar na boca. */
+const DOG_CARRY_CATS = new Set(['food', 'medical', 'misc', 'clothing', 'ammo', 'water']);
+
+export async function completeDogScavenge(characterId: number, dogId: number, locationId: string) {
+  return withCharacter(characterId, async (tx, ch) => {
+    const [d] = await tx.select().from(schema.companions).where(eq(schema.companions.id, dogId)).for('update');
+    if (!d || d.status !== 'owned' || d.ownerCharacterId !== ch.id) return { skipped: true };
+    const loc = getLocation(locationId);
+    const [ll] = await tx.select().from(schema.locationLoot).where(eq(schema.locationLoot.locationId, locationId)).for('update');
+    const table = loc?.lootTableId ? getLootTable(loc.lootTableId) : null;
+    const found: string[] = [];
+    let health = d.health; let hurt = false;
+    if (ll && table) {
+      const hours = (Date.now() - ll.lastRegenAt.getTime()) / 3_600_000;
+      let reserve = Math.min(ll.maxReserve, ll.reserve + ll.regenPerHour * hours);
+      const e = cfg().exploration;
+      const count = Math.min(2, findCount({ reserveRatio: reserve / ll.maxReserve, skillLevel: 0, perception: 6, lightMult: 1, findMult: 0.8, baseFinds: 1.4, repeatPenalty: 0, minRatio: e.minReserveRatioToFind }));
+      const entries = table.entries.filter((x) => { const def = itemDef(x.itemId); return !!def && def.weight <= 1.2 && DOG_CARRY_CATS.has(def.category); });
+      let carry = carryInfo(await itemsOf(tx, 'character', ch.id), ch);
+      for (let i = 0; i < count && entries.length; i++) {
+        const entry = rollEntry(entries, clock().isDark, loc!.tags);
+        const def = entry ? itemDef(entry.itemId) : null; if (!entry || !def) continue;
+        const cost = entry.cost ?? (e.reserveCost as Record<string, number>)[def.rarity] ?? 5;
+        if (reserve < cost) continue;
+        reserve -= cost;
+        const qty = Math.max(1, Math.min(entry.max, rng.int(entry.min, entry.max), def.category === 'ammo' ? 4 : 2));
+        const over = carry.weight + def.weight * qty > carry.capacity * 1.5;
+        await addItem(tx, over ? 'location' : 'character', over ? ch.locationId : ch.id, def.id, qty);
+        if (!over) carry = { ...carry, weight: carry.weight + def.weight * qty };
+        found.push(qty > 1 ? `${def.name} ×${qty}` : def.name);
+      }
+      await tx.update(schema.locationLoot).set({ reserve, lastRegenAt: new Date() }).where(eq(schema.locationLoot.locationId, locationId));
+      // lugar com infectados: o cachorro pode voltar machucado
+      if (ll.zombies > 0 && rng.chance(Math.min(0.35, 0.08 + (loc?.danger ?? 0.3) * 0.25))) { hurt = true; health = Math.max(5, health - rng.range(10, 25)); }
+    }
+    await tx.update(schema.companions).set({ health, hunger: clamp(d.hunger + 8, 0, 100), data: { ...d.data, awayUntil: 0 } }).where(eq(schema.companions.id, d.id));
+    const text = found.length ? `${d.name} volta abanando o rabo e larga aos seus pés: ${found.join(', ')}.` : `${d.name} volta de boca vazia, cheirando a poeira.`;
+    await systemEmote(ch.locationId, `${d.name} volta correndo para ${fullName(ch)}${found.length ? ' com alguma coisa na boca' : ''}.`);
+    await gameLog(tx, ch.id, 'event', text + (hurt ? ` Ele está mancando: os infectados de lá o pegaram de raspão.` : ''));
+    notify(ch.userId, text + (hurt ? ` Ele voltou machucado (${Math.round(health)}% de saúde).` : ''), found.length ? 'success' : 'info', 'dog');
+    pushSelf(ch.id); pushScene(ch.locationId);
+    return { ok: true, found };
+  });
+}
+
+/** Carinho no cachorro: alivia o estresse do dono (de hora em hora). */
+export async function petDog(characterId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
+    const d = await ownedDog(ch.id, tx); if (!d) fail('Você não tem cachorro.');
+    if (isAway(d!)) fail(`${d!.name} ainda não voltou.`);
+    const wait = Number(d!.data.petReadyAt ?? 0) - Date.now();
+    if (wait > 0) fail(`${d!.name} já ganhou carinho agora há pouco. Mais ${Math.ceil(wait / 60000)} min.`);
+    const stress = clamp(ch.needs.stress - 8, 0, 100);
+    await tx.update(schema.characters).set({ needs: { ...ch.needs, stress } }).where(eq(schema.characters.id, ch.id));
+    await tx.update(schema.companions).set({ loyalty: clamp(d!.loyalty + 2, 0, 100), data: { ...d!.data, petReadyAt: Date.now() + D().petCooldownMinutes * 60000 } }).where(eq(schema.companions.id, d!.id));
+    if (ch.state !== 'traveling') await systemEmote(ch.locationId, `${fullName(ch)} se agacha e coça atrás da orelha de ${d!.name}. Por um instante, o mundo parece menos ruim.`);
+    pushSelf(ch.id);
+    return { ok: true };
+  });
 }

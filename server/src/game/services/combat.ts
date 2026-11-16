@@ -1,4 +1,4 @@
-import { dogAfterCombat, ownedDog } from './dogs.js';
+import { dogAfterCombat, ownedDog, dogAvailable } from './dogs.js';
 import { markRisenInCombat, risenForCombat, settleRisen } from './risen.js';
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 import { db, schema, type Tx } from '../../db/index.js';
@@ -41,7 +41,7 @@ export async function buildPlayerUnit(tx: Tx, ch: CharRow): Promise<PlayerSetup>
     rangedAccBonus: charMod(ch.profession, ch.traits, 'rangedAcc', 0), reloadDiscount: charMod(ch.profession, ch.traits, 'reloadApDiscount', 0),
     biteMult: ch.protectedUntil && ch.protectedUntil.getTime() > Date.now() ? Number(cfg().combat.newbieBiteMultiplier ?? 1) : 1,
     load: carryInfo(items, ch).weight, capacity: carryInfo(items, ch).capacity, hasLighter: hasTool(items, 'fire'),
-    dog: await (async () => { const d = await ownedDog(ch.id, tx); return d && d.health >= 20 ? { name: d.name, chance: Number((cfg() as any).dogs?.combatAssistChance ?? 0.35), bites: 0 } : null; })(),
+    dog: await (async () => { const d = await ownedDog(ch.id, tx); return dogAvailable(d) ? { name: d!.name, chance: Number((cfg() as any).dogs?.combatAssistChance ?? 0.35), bites: 0 } : null; })(),
   };
 }
 
@@ -189,9 +189,32 @@ async function applyEffect(tx: Tx, s: CombatState, e: Effect, kills: Record<numb
       else await addItem(tx, 'character', e.characterId, 'arrow', 1); // na estrada, quem atirou recolhe no fim
       return;
     }
-    case 'kill': if (e.characterId) kills[e.characterId] = (kills[e.characterId] ?? 0) + 1; (s as any).killCount = ((s as any).killCount ?? 0) + 1; return;
+    case 'kill': {
+      if (e.characterId) kills[e.characterId] = (kills[e.characterId] ?? 0) + 1; (s as any).killCount = ((s as any).killCount ?? 0) + 1;
+      // o que o infectado tinha nos bolsos cai no chão (na estrada, quem matou pega)
+      const drop = pocketLoot();
+      if (drop) {
+        if (s.context.type === 'location' && s.context.locationId) await addItem(tx, 'location', s.context.locationId, drop.itemId, drop.qty);
+        else if (e.characterId) await addItem(tx, 'character', e.characterId, drop.itemId, drop.qty);
+      }
+      return;
+    }
     case 'stamina': return;
   }
+}
+
+/** Bolsos de infectado: às vezes nada, às vezes algo pequeno que a pessoa carregava. */
+const POCKETS: { itemId: string; w: number; min?: number; max?: number }[] = [
+  { itemId: 'cigarettes', w: 7, min: 1, max: 4 }, { itemId: 'rag', w: 6, min: 1, max: 2 }, { itemId: 'crackers', w: 5 }, { itemId: 'chocolate', w: 4 },
+  { itemId: 'lighter', w: 4 }, { itemId: 'bandage', w: 4 }, { itemId: 'painkillers', w: 3 }, { itemId: 'water_bottle', w: 2 }, { itemId: 'scrap_metal', w: 2 },
+  { itemId: 'ammo_9mm', w: 2, min: 2, max: 6 }, { itemId: 'car_keys', w: 0.6 },
+];
+function pocketLoot() {
+  if (!rng.chance(0.45)) return null;
+  const pool = POCKETS.filter((p) => itemDef(p.itemId));
+  const total = pool.reduce((a, p) => a + p.w, 0); let r = rng.next() * total;
+  for (const p of pool) { r -= p.w; if (r <= 0) return { itemId: p.itemId, qty: p.min ? rng.int(p.min, p.max ?? p.min) : 1 }; }
+  return null;
 }
 
 async function syncStamina(tx: Tx, s: CombatState) {

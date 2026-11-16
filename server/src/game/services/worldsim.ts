@@ -9,6 +9,7 @@ import { emitAll, emitToLocation, pushScene } from './realtime.js';
 import { radioBroadcast, systemEmote } from './chat.js';
 import { allLocations, connectionsFrom, getLocation } from './world.js';
 import { bridgeBlocksHordes, damageProjectsAt, hordeSpawnMultiplier, radioOnline } from './projects.js';
+import { broadcastHordes } from './hordes.js';
 const lastRadioAlert = new Map<number, number>();
 
 /** Clima: troca a cada N horas de jogo, com pesos configuráveis. */
@@ -100,7 +101,17 @@ export async function processHordes() {
       await tx.update(schema.hordes).set({ locationId: next, nextMoveAt: new Date(Date.now() + cfg().hordes.moveEveryMinutes * 60000) }).where(eq(schema.hordes.id, h.id));
       const loc = getLocation(next)!;
       await systemEmote(next, `Uma horda de ~${h.size} infectados chega a ${loc.name}!`, 'system');
-      for (const c of connectionsFrom(next)) emitToLocation(c.other, 'notify', { text: `Gemidos vindos da direção de ${loc.name}. Uma horda se move por ali.`, level: 'warn', at: Date.now() });
+      for (const c of connectionsFrom(next)) emitToLocation(c.other, 'notify', { text: `Gemidos vindos da direção de ${loc.name}. Uma horda se move por ali.`, level: 'warn', icon: 'horde', at: Date.now() });
+      // quem ficou parado no caminho (e não se escondeu) pode ser pego pela frente da horda
+      {
+        const { isUserOnline } = await import('./realtime.js');
+        const present = (await tx.select().from(schema.characters).where(and(eq(schema.characters.locationId, next), eq(schema.characters.alive, true), eq(schema.characters.state, 'idle'))).for('update'))
+          .filter((c: any) => isUserOnline(c.userId) && !c.needs.unconscious);
+        if (present.length && rng.chance(0.55)) {
+          const { startCombat } = await import('./combat.js');
+          await startCombat(tx, { characters: present, locationId: next, zombieCount: Math.min(6, 2 + present.length), reason: `A horda chegou a ${loc.name} — e encontrou vocês.` });
+        }
+      }
       if (next === h.targetLocationId) await attackBase(tx, h);
       if (radioOnline() && Date.now() - (lastRadioAlert.get(h.id) ?? 0) > 30 * 60000) {
         lastRadioAlert.set(h.id, Date.now());
@@ -109,8 +120,10 @@ export async function processHordes() {
       pushScene(next); pushScene(h.locationId);
     });
   }
+  if (due.length) broadcastHordes();
   if (rng.chance(cfg().hordes.spawnChancePerHour * hordeSpawnMultiplier() * (cfg().world.eventRollEveryMinutes / 60))) {
     const h = await db.transaction((tx) => spawnHorde(tx));
+    if (h) broadcastHordes();
     if (h && radioOnline()) await radioBroadcast(88.1, 'Rádio KRVN', `Nova horda de ~${h.size} infectados formada perto de ${getLocation(h.locationId)?.name}.`).catch(() => undefined);
   }
 }

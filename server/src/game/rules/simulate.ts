@@ -12,7 +12,7 @@ export type ConditionLike = {
 
 export type SimContext = {
   cfg: GameConfig; now: number; online: boolean; activity: string; inCombat: boolean; traveling: boolean;
-  temperature: number; weather: string; indoor: boolean; insulation: number; encumbrance: number; // 0 = leve, 1 = no limite, >1 = sobrecarregado
+  temperature: number; weather: string; indoor: boolean; nearFire?: boolean; insulation: number; encumbrance: number; // 0 = leve, 1 = no limite, >1 = sobrecarregado
   profession: string; traits: string[]; endurance: number; bedBonus: number;
   /** Multiplicador de cicatrização do local (ex.: hospital reaberto). */
   healBonus?: number;
@@ -87,7 +87,8 @@ export function simulate(needsIn: Needs, woundsIn: WoundLike[], condsIn: Conditi
       const nutrition = n.hunger < 65 && n.thirst < 65 ? 1 : 0.35;
       const fractureMult = w.type === 'fracture' && !w.splinted ? cfg.wounds.fractureHealingWithoutSplint : 1;
       const quality = Number((w.treatments.find((t) => t.startsWith('q:')) ?? 'q:1').slice(2));
-      const rate = cfg.wounds.healingPerHourBase * def.heal * fractureMult * (w.sutured ? 1.5 : 1) * nutrition * (sleeping ? 1.5 : resting ? 1.2 : 1)
+      const rate = cfg.wounds.healingPerHourBase * def.heal * fractureMult * (w.sutured ? 1.5 : 1) * nutrition
+        * (sleeping ? (cfg.wounds.sleepHealingMultiplier ?? 2.5) * (ctx.bedBonus || 1) : resting ? (cfg.wounds.restHealingMultiplier ?? 1.5) : 1)
         * charMod(ctx.profession, ctx.traits, 'healing') * quality * (1 - w.severity * 0.4) * (ctx.healBonus ?? 1);
       w.healing = clamp(w.healing + rate * h, 0, 1);
       if (w.healing >= 1) { w.healedAt = new Date(ctx.now); messages.push(`Um ferimento (${def.name.toLowerCase()}) cicatrizou.`); }
@@ -131,8 +132,12 @@ export function simulate(needsIn: Needs, woundsIn: WoundLike[], condsIn: Conditi
   }
 
   // ── Temperatura corporal
-  const cold = !ctx.indoor && ctx.temperature < 12 ? (12 - ctx.temperature) / 12 * (1 - clamp(ctx.insulation, 0, 1)) * (ctx.weather === 'rain' || ctx.weather === 'storm' ? 1.6 : 1) : 0;
-  const target = 37 + fever - cold * 3;
+  const wet = ctx.weather === 'rain' || ctx.weather === 'storm';
+  let cold = !ctx.indoor && ctx.temperature < 12 ? (12 - ctx.temperature) / 12 * (1 - clamp(ctx.insulation, 0, 1)) * (wet ? 1.6 : 1) : 0;
+  // Ao lado do fogo o corpo esquenta de verdade: o frio quase some (só tempestade ainda castiga quem está ao relento)
+  // e o corpo sobe um pouco acima do normal até sair da hipotermia.
+  if (ctx.nearFire) cold = ctx.weather === 'storm' && !ctx.indoor ? cold * 0.3 : 0;
+  const target = 37 + fever - cold * 3 + (ctx.nearFire ? 0.5 : 0);
   n.bodyTemp = n.bodyTemp + (target - n.bodyTemp) * Math.min(1, 0.6 * h * 4);
   const hasHypo = conds.some((c) => c.kind === 'hypothermia' && !c.resolvedAt) || newConditions.some((c) => c.kind === 'hypothermia');
   if (n.bodyTemp < cfg.diseases.hypothermiaThreshold && !hasHypo) {
@@ -165,7 +170,8 @@ export function simulate(needsIn: Needs, woundsIn: WoundLike[], condsIn: Conditi
   const energyMult = sleeping ? cfg.needs.energyRegenSleepingMultiplier : resting ? cfg.needs.energyRegenRestingMultiplier : 1;
   const starvingFactor = n.hunger > 80 || n.thirst > 80 || n.sleepiness > 90 ? 0.3 : 1;
   n.energy = clamp(n.energy + cfg.needs.energyRegenPerHour * h * energyMult * starvingFactor * (ctx.bedBonus || 1), 0, 100);
-  n.stress = clamp(n.stress - cfg.needs.stressDecayPerHour * h * (resting ? 2 : 1) + mods.pain * 0.02 * h, 0, 100);
+  // dormir é o que mais alivia a cabeça (e a dor incomoda menos dormindo)
+  n.stress = clamp(n.stress - (ctx.nearFire ? 2 * h : 0) - cfg.needs.stressDecayPerHour * h * (sleeping ? (cfg.needs.stressSleepMultiplier ?? 4) * (ctx.bedBonus || 1) : resting ? 2 : 1) + mods.pain * 0.02 * h * (sleeping ? 0.5 : 1), 0, 100);
   // ── Vícios (fissura, abstinência, embriaguez)
   messages.push(...stepAddiction(n, ctx.traits, h, cfg));
 

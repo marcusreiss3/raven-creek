@@ -18,7 +18,7 @@ import { baseDefense } from './zombies.js';
 import { isPowered } from './projects.js';
 import { fireLit } from './nature.js';
 import { dogFindBonus, maybeSpawnStray } from './dogs.js';
-import { maybeFindNote } from './stories.js';
+import { maybeFindNote, searchHiddenStash } from './stories.js';
 
 const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 
@@ -111,6 +111,7 @@ export async function completeExplore(jobId: number, characterId: number) {
         await systemEmote(ch.locationId, `Gemidos! Infectados avançam sobre ${fullName(ch)}!`, 'system');
         return;
       }
+      if (await searchHiddenStash(tx, ch)) return;
       if (await maybeSpawnStray(tx, ch.locationId)) return;
       if (await maybeFindNote(tx, ch)) return;
       if (rng.chance(e.eventChance)) {

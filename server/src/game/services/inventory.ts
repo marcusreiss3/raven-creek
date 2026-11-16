@@ -2,8 +2,8 @@ import { noteInfo } from './stories.js';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db, schema, type Tx } from '../../db/index.js';
 import { charMod } from '../content/character.js';
-import { EQUIP_SLOTS } from '../content/items.js';
-import { cfg, itemDef } from './config.js';
+import { EQUIP_SLOTS, SALVAGE } from '../content/items.js';
+import { cfg, getRecipes, itemDef } from './config.js';
 import { fail } from './infra.js';
 
 export type ItemRow = typeof schema.items.$inferSelect;
@@ -113,13 +113,24 @@ export async function transferItem(tx: Tx, itemId: number, from: { type: string;
   return moved;
 }
 
+const NO_SALVAGE_CATS = ['food', 'water', 'medical', 'ammo', 'book'];
+/** O que se recupera ao desmontar um item (null se não dá para desmontar). Roupas de pano são "rasgadas" à parte. */
+export function salvageOf(defId: string): { itemId: string; qty: number }[] | null {
+  const d = itemDef(defId); if (!d || NO_SALVAGE_CATS.includes(d.category)) return null;
+  if (SALVAGE[defId]) return SALVAGE[defId];
+  const r = getRecipes().find((x) => x.output.itemId === defId && x.output.qty > 0 && x.skill !== 'cooking' && !x.inputs.some((y) => y.itemId === defId) && x.inputs.length > 0);
+  if (!r) return null;
+  return r.inputs.map((x, idx) => ({ itemId: x.itemId, qty: idx === 0 ? Math.max(1, x.qty * 0.5) : x.qty * 0.5 }));
+}
+
 export function describeItem(i: ItemRow) {
   const d = itemDef(i.defId);
   return {
     id: i.id, defId: i.defId, name: d?.name ?? i.defId, category: d?.category ?? 'misc', quantity: i.quantity, weight: d?.weight ?? 0,
     durability: i.durability, durabilityMax: d?.durabilityMax ?? 0, slot: i.slot, equipSlot: d?.equipSlot ?? null, icon: d?.icon ?? 'generic',
     rarity: d?.rarity ?? 'common', description: d?.description ?? '', props: publicProps(d?.props ?? {}), data: { ammo: i.data?.ammo ?? undefined },
-    note: i.defId === 'note' ? noteInfo(i.data) : undefined,
+    note: d?.props?.note ? noteInfo(i.data) : undefined,
+    canDismantle: !!salvageOf(i.defId), rippable: Number(d?.props?.rippable ?? 0) || undefined,
     freshness: Number(d?.props?.perishHours ?? 0) > 0 ? Math.max(0, Math.round(100 * (1 - Number(i.data?.age ?? 0) / Number(d!.props.perishHours)))) : undefined,
   };
 }

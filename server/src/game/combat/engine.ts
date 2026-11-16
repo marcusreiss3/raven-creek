@@ -361,7 +361,7 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
       for (const z of s.units) {
         if (z.side !== 'zombie' || z.out || z.hidden || dist(z, pt) > 8) continue;
         const seesSomeone = s.units.some((u) => u.side === 'player' && !u.out && dist(u, z) <= (z.stats?.perception ?? 6) && hasLOS(s, z, u));
-        if (seesSomeone && z.behavior !== 'shambler') continue;
+        if ((seesSomeone && z.behavior !== 'shambler') || busyWithPrey(s, z)) continue;
         z.aware = true; z.lastKnown = pt; z.targetId = null; (z as any).distractedUntil = s.round + 1; lured++;
       }
       log(s, `${me.name} arremessa um objeto que cai com estrondo${lured ? ` — ${lured} infectado(s) se viram para o barulho` : ''}.`, { unit: me.id, kind: 'distract', to: pt });
@@ -371,15 +371,21 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
       // Gritar, bater em metal, acenar: puxa a atenção dos infectados próximos para si — os outros podem passar ou fugir.
       if (me.ap < 1) return { ok: false, error: 'Provocar custa 1 PA.' };
       me.ap -= 1; me.actedThisTurn = true; me.sneaking = false; me.stamina = Math.max(0, (me.stamina ?? 50) - 2);
-      let n = 0;
+      let n = 0; let ignored = 0;
       for (const z of s.units) {
         if (z.side !== 'zombie' || z.out || z.hidden) continue;
-        if (dist(z, me) > 9 && !hasLOS(s, z, me)) continue;
-        if (dist(z, me) > 12) continue;
+        const d = dist(z, me); const hear = z.stats?.hearing ?? 10; const los = hasLOS(s, z, me);
+        // ouve pela audição do tipo; atrás de parede o som chega mais fraco
+        if (d > (los ? hear : Math.floor(hear * 0.6))) continue;
+        // quem já está em cima de outro sobrevivente só larga a presa se quem gritou estiver ali do lado também
+        const busy = busyWithPrey(s, z, me.id);
+        if (busy && d > dist(busy, z) + 2) { ignored++; continue; }
+        // de longe, nem todos se viram
+        if (d > 6 && !rng.chance(los ? 0.75 : 0.5)) continue;
         z.tauntBy = me.id; z.tauntUntil = s.round + 1; z.aware = true; z.targetId = me.id; z.lastKnown = { x: me.x, y: me.y }; n++;
       }
       s.noise += 4;
-      log(s, `${me.name} grita e bate em tudo o que encontra${n ? ` — ${n} infectado(s) se voltam para ${me.name}!` : ', mas nenhum infectado está perto.'}`, { unit: me.id, kind: 'taunt' });
+      log(s, `${me.name} grita e bate em tudo o que encontra${n ? ` — ${n} infectado(s) se voltam para ${me.name}!` : ', mas nenhum infectado vem.'}${ignored ? ` ${ignored} estão ocupados demais com quem está na frente deles.` : ''}`, { unit: me.id, kind: 'taunt' });
       if (me.characterId && n) s.effects.push({ type: 'xp', characterId: me.characterId, skill: 'athletics', amount: 1, key: 'combat_taunt' });
       return { ok: true, apSpent: 1 };
     }
@@ -453,13 +459,21 @@ export function performAction(s: CombatState, unitId: string, a: Action, cfg: Ga
   }
 }
 
+/**
+ * Infectado "ocupado": tem um sobrevivente a até 2 casas que ele enxerga (ou está atracado).
+ * Quem está ocupado não larga a presa para ir atrás de barulho — um zumbi na sua cara não sai andando por causa de um grito lá longe.
+ */
+export function busyWithPrey(s: CombatState, z: Unit, exceptId?: string) {
+  return s.units.find((u) => u.side === 'player' && (u.out === null || u.out === 'down') && u.id !== exceptId && dist(u, z) <= 2 && (dist(u, z) <= 1 || hasLOS(s, z, u))) ?? null;
+}
+
 /** Alarme tocando: quem não está atracado com alguém vai até o carro. */
 export function lureToAlarm(s: CombatState) {
   if (!s.alarm || s.alarm.until < s.round) { s.alarm = null; return 0; }
   let n = 0;
   for (const z of s.units) {
     if (z.side !== 'zombie' || z.out || z.hidden) continue;
-    if (s.units.some((u) => u.side === 'player' && !u.out && dist(u, z) <= 1)) continue;
+    if (busyWithPrey(s, z)) continue;
     if (z.tauntBy && (z.tauntUntil ?? 0) >= s.round) continue;
     z.aware = true; z.lastKnown = { x: s.alarm.x, y: s.alarm.y }; z.targetId = null; (z as any).distractedUntil = s.round + 1; n++;
   }
@@ -512,7 +526,7 @@ export function throwObject(s: CombatState, me: Unit, pt: Pos, item: { name: str
   let lured = 0;
   for (const z of s.units) {
     if (z.side !== 'zombie' || z.out || z.hidden || dist(z, pt) > 6 || z === t) continue;
-    if (s.units.some((u) => u.side === 'player' && !u.out && dist(u, z) <= 1)) continue;
+    if (busyWithPrey(s, z)) continue;
     if (z.tauntBy && (z.tauntUntil ?? 0) >= s.round) continue;
     z.aware = true; z.lastKnown = pt; z.targetId = null; (z as any).distractedUntil = s.round + 1; lured++;
   }
@@ -575,7 +589,11 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
   // Barulho atrai infectados
   const noise = p.noise ?? 1;
   s.noise += noise;
-  if (noise >= 5) for (const z of s.units) if (z.side === 'zombie' && !z.out && dist(z, me) <= noise) { z.aware = true; z.lastKnown = { x: me.x, y: me.y }; if (z.hidden) z.hidden = false; }
+  if (noise >= 5) for (const z of s.units) if (z.side === 'zombie' && !z.out && dist(z, me) <= noise) {
+    if (z.hidden) z.hidden = false;
+    z.aware = true;
+    if (!z.targetId && !busyWithPrey(s, z, me.id)) z.lastKnown = { x: me.x, y: me.y }; // quem já persegue alguém só "anota" o tiro
+  }
 
   // desgaste
   if (w.itemId && rng.chance(ranged ? 0.15 : 0.6)) { w.durability -= 1; s.effects.push({ type: 'durability', itemId: w.itemId, delta: -1 }); }

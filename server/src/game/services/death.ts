@@ -32,6 +32,7 @@ export async function killCharacter(tx: Tx, ch: CharRow, cause: string) {
   if (!pd.enabled) {
     await tx.update(schema.wounds).set({ healedAt: now, healing: 1 }).where(eq(schema.wounds.characterId, ch.id));
     await tx.update(schema.conditions).set({ resolvedAt: now }).where(eq(schema.conditions.characterId, ch.id));
+    await releaseVehicle(tx, ch.id);
     await tx.update(schema.characters).set({
       locationId: SPAWN_LOCATION, state: 'idle', activity: 'idle', combatId: null, vehicleId: null, busyUntil: null, busyAction: null,
       needs: { hunger: 30, thirst: 30, sleepiness: 30, stamina: 60, energy: 50, stress: 60, bodyTemp: 37, blood: 80, boredom: 0, vitality: 70 },
@@ -43,6 +44,7 @@ export async function killCharacter(tx: Tx, ch: CharRow, cause: string) {
     return;
   }
 
+  await releaseVehicle(tx, ch.id);
   await tx.update(schema.characters).set({
     alive: false, state: 'dead', activity: 'idle', diedAt: now, deathCause: cause, combatId: null, busyUntil: null, busyAction: null, vehicleId: null,
   }).where(eq(schema.characters.id, ch.id));
@@ -54,4 +56,10 @@ export async function killCharacter(tx: Tx, ch: CharRow, cause: string) {
   await systemEmote(locationId, `${name} está morto.`, 'system');
   emitToUser(ch.userId, 'character:death', { characterId: ch.id, name, cause: DEATH_CAUSES[cause] ?? cause, reanimated: reanimates });
   pushScene(locationId);
+}
+
+/** Ninguém fica "ao volante" depois de morrer: o veículo fica livre para quem chegar (e deixa de ter dono). */
+async function releaseVehicle(tx: Tx, characterId: number) {
+  await tx.update(schema.vehicles).set({ driverId: null, running: false }).where(eq(schema.vehicles.driverId, characterId));
+  await tx.update(schema.vehicles).set({ ownerCharacterId: null }).where(eq(schema.vehicles.ownerCharacterId, characterId));
 }

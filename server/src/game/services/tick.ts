@@ -10,7 +10,7 @@ import { carryInfo, insulationOf, itemsOf } from './inventory.js';
 import { isUserOnline, notify, pushScene, pushSelf, onlineSince } from './realtime.js';
 import { markCombatant } from './combat.js';
 import { getLocation } from './world.js';
-import { fireWarmth } from './nature.js';
+import { fireLit, fireWarmth } from './nature.js';
 import { STRUCTURES } from '../content/structures.js';
 import { healingBonus } from './projects.js';
 import { prologueIntercept } from './prologue.js';
@@ -51,6 +51,7 @@ export async function tickCharacter(characterId: number, now = Date.now()) {
       temperature: c.temperature + (ch.state === 'traveling' ? 0 : fireWarmth(ch.locationId)), weather: c.weather, indoor: !!loc?.indoor && ch.state !== 'traveling', insulation: insulationOf(items), encumbrance: carryInfo(items, ch).ratio,
       profession: ch.profession, traits: ch.traits, endurance: ch.attributes.endurance ?? 4, bedBonus,
       healBonus: ch.state === 'traveling' ? 1 : healingBonus(ch.locationId),
+      nearFire: ch.state !== 'traveling' && fireLit(ch.locationId),
     };
     // Desconectado: o corpo fica parado (fome, sede, sono, ferimentos, infecção, doenças, cicatrização e energia).
     // Só evolui, em velocidade normal, enquanto o jogador está conectado. Viagens seguem normais.

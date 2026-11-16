@@ -66,7 +66,8 @@ export function NatureActions({ busy }: { busy: boolean }) {
           <button className="btn" disabled={!scene.campfire.canHaveFire || (!idle && !scene.campfire.lit)} onClick={() => setFire(true)}><GameIcon name="fire" size={18} />{scene.campfire.lit ? 'Fogueira' : 'Acender fogueira'}</button>
         </Tip>
       )}
-      {scene.canHunt && <Tip text="Caçar (30 min). Precisa de arma equipada; tiros fazem barulho."><button className="btn" disabled={!idle} onClick={() => action('hunt')}><GameIcon name="hunt" size={18} />Caçar</button></Tip>}
+      {self.dog && <DogScavengeButton disabled={self.state === 'traveling'} />}
+      {scene.canHunt && <Tip text="Caçar (15 min). Precisa de arma equipada; tiros fazem barulho."><button className="btn" disabled={!idle} onClick={() => action('hunt')}><GameIcon name="hunt" size={18} />Caçar</button></Tip>}
       {scene.canFish && <Tip text="Pescar (20 min). Precisa de vara de pescar."><button className="btn" disabled={!idle} onClick={() => action('fish')}><GameIcon name="fish" size={18} />Pescar</button></Tip>}
       {fire && <FireModal onClose={() => setFire(false)} />}
     </>
@@ -132,6 +133,7 @@ export function CompanionSection() {
     </Section>
   );
   const foods = self.inventory.filter((i) => !i.slot && isFood(i.category));
+  const meds = self.inventory.filter((i) => !i.slot && DOG_MEDS[i.defId]);
   return (
     <Section title="Companheiro">
       <div className="flex items-start gap-3">
@@ -147,7 +149,15 @@ export function CompanionSection() {
         <Bar label="Saciedade" value={100 - d.hunger} color="#d98c1a" small />
         <Bar label="Lealdade" value={d.loyalty} color="#8b7fb8" small />
       </div>
-      <div className="text-xs text-ink-400 mt-2">Segue você, rosna quando infectados se aproximam (menos emboscadas), fareja itens ao vasculhar, ajuda na caça e morde infectados no combate. Com fome por muito tempo, vai embora.</div>
+      <div className="text-xs text-ink-400 mt-2">Segue você, rosna quando infectados se aproximam (menos emboscadas), fareja itens ao vasculhar, ajuda na caça e morde infectados no combate. Dá para mandar farejar sozinho e ele traz coisas pequenas. Com fome por muito tempo, vai embora.</div>
+      <DogStatus />
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        <DogScavengeButton disabled={self.state === 'traveling'} />
+        <CooldownButton until={d.petReadyAt} label="Fazer carinho" icon="dog" title="Alivia um pouco o seu estresse e aumenta a lealdade (de hora em hora)" onClick={() => action('dog_pet')} />
+      </div>
+      <div className="label mt-3 mb-1">Cuidar dos machucados</div>
+      {meds.length && d.health < 100 ? <div className="flex flex-wrap gap-1.5">{meds.map((i) => <CooldownButton key={i.id} until={d.treatReadyAt} label={`${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`} title={`Recupera ~${DOG_MEDS[i.defId]}% da saúde (mais com Medicina)`} onClick={() => action('dog_treat', { itemId: i.id })} />)}</div>
+        : <div className="text-xs text-ink-400">{d.health >= 100 ? `${d.name} está inteiro.` : 'Sem item médico no inventário (curativo, trapo, kit de primeiros socorros, antibiótico…).'}</div>}
       <div className="label mt-3 mb-1">Alimentar</div>
       {foods.length ? <div className="flex flex-wrap gap-1.5">{foods.map((i) => <button key={i.id} className="btn !py-1" onClick={() => action('dog_feed', { itemId: i.id })}>{i.name}{i.quantity > 1 ? ` ×${i.quantity}` : ''}</button>)}</div>
         : <div className="text-xs text-ink-400">Sem comida no inventário.</div>}
@@ -186,6 +196,7 @@ export function OwnerDog({ ownerId, isSelf, walking }: { ownerId: number; isSelf
   const selfDog = useGame((s) => (isSelf ? s.self?.dog : null));
   const dog = sceneDog ?? selfDog;
   if (!dog) return null;
+  if ((sceneDog && sceneDog.away) || (selfDog?.awayUntil && new Date(selfDog.awayUntil).getTime() > Date.now())) return null; // saiu farejando
   return <DogFigure variant={dog.variant} face="right" walking={walking} title={`${dog.name} — ${dog.look}`} className="bottom-[1%] -left-[18%] h-[30%] z-[1]" />;
 }
 
@@ -203,4 +214,32 @@ export function StrayDogs() {
       {dog && <TameModal dog={dog} onClose={() => setDog(null)} />}
     </>
   );
+}
+
+/** Quanto cada item médico recupera do cachorro (espelha o servidor). */
+const DOG_MEDS: Record<string, number> = { first_aid_kit: 45, surgical_supplies: 35, suture_kit: 30, antibiotics: 25, bandage: 20, splint: 15, rag: 12, antiseptic: 10, painkillers: 8, dirty_rag: 6 };
+
+const minsLeft = (iso?: string | null) => (iso ? Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 60000)) : 0);
+
+function CooldownButton({ until, label, title, icon, onClick }: { until?: string | null; label: string; title: string; icon?: string; onClick: () => void }) {
+  const left = minsLeft(until);
+  return <Tip text={left ? `${title}\nDisponível em ${left} min.` : title}><button className="btn !py-1" disabled={left > 0} onClick={onClick}>{icon && <GameIcon name={icon} size={15} />}{label}{left ? ` (${left} min)` : ''}</button></Tip>;
+}
+
+/** Mandar o cachorro farejar o local sozinho (traz coisas pequenas; tem recarga). */
+function DogScavengeButton({ disabled }: { disabled?: boolean }) {
+  const d = useGame((s) => s.self?.dog);
+  if (!d) return null;
+  const away = minsLeft(d.awayUntil);
+  const why = away ? `${d.name} está farejando (volta em ~${away} min).` : d.health < 40 ? `${d.name} está machucado demais para sair sozinho.` : d.hunger > 75 ? `${d.name} está com fome demais para sair.` : '';
+  if (why) return <Tip text={why}><button className="btn !py-1" disabled><GameIcon name="dog" size={16} />{away ? `${d.name} farejando…` : `Mandar ${d.name} farejar`}</button></Tip>;
+  return <CooldownButton until={d.scavengeReadyAt} label={`Mandar ${d.name} farejar`} icon="dog" title={`${d.name} vasculha o lugar sozinho por alguns minutos e traz o que couber na boca (comida, remédio, munição…). Lugar com infectados pode machucá-lo.`} onClick={() => !disabled && action('dog_scavenge')} />;
+}
+
+function DogStatus() {
+  const d = useGame((s) => s.self?.dog);
+  if (!d) return null;
+  const away = minsLeft(d.awayUntil);
+  if (!away && d.health >= 40) return null;
+  return <p className="text-[12.5px] text-amber-200 mt-1.5">{away ? `${d.name} saiu farejando e volta em ~${away} min. Enquanto isso, não ajuda em combate nem na caça.` : `${d.name} está machucado: cuide dele para ele voltar a sair sozinho.`}</p>;
 }

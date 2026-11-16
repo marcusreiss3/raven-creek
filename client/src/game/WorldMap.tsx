@@ -8,6 +8,7 @@ import { action } from '../lib/socket';
 import { api } from '../lib/api';
 import { fmtDuration } from '../components/ui';
 import type { MapLocation, WorldMap } from '../lib/types';
+import { hordeSizeLabel, useHordes, type HordeIntel } from './Hordes';
 
 // ───────────────────────── Dados ─────────────────────────
 type Cat = { label: string; color: string; icon?: boolean };
@@ -73,12 +74,21 @@ export function shortestPath(map: WorldMap, from: string, to: string) {
 type View = { x: number; y: number; w: number };
 
 export function MapPanel({ onClose }: { onClose: () => void }) {
-  const { self, scene } = useGame();
+  // Assina só o que o mapa usa (antes re-renderizava o SVG inteiro a cada mensagem de chat ou tique do relógio).
+  const self = useGame((s) => s.self);
+  const scene = useGame((s) => s.scene);
   const route = useGame((s) => s.route);
   const map = useWorldMap();
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 1000, h: 700 });
-  const [view, setView] = useState<View | null>(null);
+  const [view, setViewState] = useState<View | null>(null);
+  // Arrastar/pinçar gera dezenas de eventos por quadro: guarda a vista mais recente e desenha uma vez por quadro.
+  const viewRef = useRef<View | null>(null); const raf = useRef(0);
+  const setView = (nv: View | null) => {
+    viewRef.current = nv;
+    if (!raf.current) raf.current = requestAnimationFrame(() => { raf.current = 0; setViewState(viewRef.current); });
+  };
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
   const [selected, setSelected] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -95,53 +105,56 @@ export function MapPanel({ onClose }: { onClose: () => void }) {
 
   const byId = useMemo(() => new Map((map?.locations ?? []).map((l) => [l.id, l])), [map]);
   const here = self?.travel ? self.travel.fromId : self?.locationId ?? '';
-  const adjacent = useMemo(() => new Set(scene?.exits.filter((e) => !e.blocked).map((e) => e.toId) ?? []), [scene]);
+  const exitsKey = scene?.exits.filter((e) => !e.blocked).map((e) => e.toId).join('|') ?? '';
+  const adjacent = useMemo(() => new Set(exitsKey ? exitsKey.split('|') : []), [exitsKey]);
   const bounds = useMemo(() => {
     if (!map) return null;
     const xs = map.locations.map((l) => l.x), ys = map.locations.map((l) => l.y);
     return { minX: Math.min(...xs) - 500, maxX: Math.max(...xs) + 500, minY: Math.min(...ys) - 500, maxY: Math.max(...ys) + 500 };
   }, [map]);
-  const fitAll = () => bounds && setView((() => {
+  const fitAll = () => { if (bounds) setView((() => {
     const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
     const w = Math.max(bw, bh * (size.w / size.h));
     return { x: (bounds.minX + bounds.maxX) / 2 - w / 2, y: (bounds.minY + bounds.maxY) / 2 - (w * size.h / size.w) / 2, w };
-  })());
-  const centerOn = (id: string, w?: number) => { const l = byId.get(id); if (!l) return; const ww = w ?? Math.min(view?.w ?? 2500, 2500); setView({ x: l.x - ww / 2, y: l.y - (ww * size.h / size.w) / 2, w: ww }); };
+  })()); };
+  const centerOn = (id: string, w?: number) => { const l = byId.get(id); if (!l) return; const ww = w ?? Math.min(viewRef.current?.w ?? 2500, 2500); setView({ x: l.x - ww / 2, y: l.y - (ww * size.h / size.w) / 2, w: ww }); };
   useEffect(() => { if (map && !view && size.w > 0) { if (byId.get(here)) centerOn(here, 1700); else fitAll(); } }, [map, size.w]);
 
-  if (!self) return null;
   const v = view ?? { x: 0, y: 0, w: 1000 };
   const vh = v.w * size.h / size.w;
   const u = v.w / size.w; // metros por pixel
-  const toWorld = (px: number, py: number) => ({ x: v.x + px * u, y: v.y + py * u });
   const zoomAt = (factor: number, px = size.w / 2, py = size.h / 2) => {
-    const p = toWorld(px, py); const w = Math.min(Math.max(v.w * factor, 250), 24000);
+    const cur = viewRef.current ?? v; const cu = cur.w / size.w;
+    const p = { x: cur.x + px * cu, y: cur.y + py * cu }; const w = Math.min(Math.max(cur.w * factor, 250), 24000);
     setView({ x: p.x - (px / size.w) * w, y: p.y - (py / size.h) * w * size.h / size.w, w });
   };
 
   const sel = selected ? byId.get(selected) ?? null : null;
-  const path = map && sel && here ? shortestPath(map, here, sel.id) : null;
-  const routeTarget = route ? byId.get(route.targetId) : null;
-  const routePath = map && routeTarget && !path ? shortestPath(map, here, routeTarget.id) : null;
-  const shownPath = path ?? routePath;
-  const pathEdges = new Set<string>();
-  if (shownPath) for (let i = 0; i < shownPath.ids.length - 1; i++) { pathEdges.add(`${shownPath.ids[i]}|${shownPath.ids[i + 1]}`); pathEdges.add(`${shownPath.ids[i + 1]}|${shownPath.ids[i]}`); }
-  const onPath = new Set(shownPath?.ids ?? []);
+  const routeTargetId = route ? route.targetId : null;
+  // rotas (Dijkstra) só são recalculadas quando o destino ou a origem mudam, não a cada quadro de arrasto
+  const { path, pathEdges, onPath } = useMemo(() => {
+    const path = map && selected && here && byId.get(selected) ? shortestPath(map, here, selected) : null;
+    const routePath = map && routeTargetId && byId.get(routeTargetId) && !path ? shortestPath(map, here, routeTargetId) : null;
+    const shownPath = path ?? routePath;
+    const pathEdges = new Set<string>();
+    if (shownPath) for (let i = 0; i < shownPath.ids.length - 1; i++) { pathEdges.add(`${shownPath.ids[i]}|${shownPath.ids[i + 1]}`); pathEdges.add(`${shownPath.ids[i + 1]}|${shownPath.ids[i]}`); }
+    return { path, pathEdges, onPath: new Set(shownPath?.ids ?? []) };
+  }, [map, byId, here, selected, routeTargetId]);
 
   // ── Regiões: círculo em volta dos locais de cada região
-  const regionShapes = (map?.regions ?? []).map((r) => {
+  const regionShapes = useMemo(() => (map?.regions ?? []).map((r) => {
     const ls = map!.locations.filter((l) => l.regionId === r.id && !l.indoor);
     if (!ls.length || r.id === 'route9') return null; // a rodovia corta o mapa todo: as próprias estradas já mostram
     const cx = ls.reduce((s, l) => s + l.x, 0) / ls.length, cy = ls.reduce((s, l) => s + l.y, 0) / ls.length;
     const rad = Math.max(350, ...ls.map((l) => Math.hypot(l.x - cx, l.y - cy))) + 220;
     return { ...r, cx, cy, rad, color: REGION_COLORS[r.id] ?? '#8a8378' };
-  }).filter(Boolean) as { id: string; name: string; cx: number; cy: number; rad: number; color: string }[];
+  }).filter(Boolean) as { id: string; name: string; cx: number; cy: number; rad: number; color: string }[], [map]);
 
   // ── Locais visíveis neste zoom
   const showIndoor = u < 1.6;
-  const visible = (map?.locations ?? []).filter((l) => !l.indoor || showIndoor || l.id === here || l.id === selected || onPath.has(l.id) || adjacent.has(l.id));
-  const baseAt = new Map((map?.bases ?? []).map((b) => [b.locationId, b]));
-  const projAt = new Map((map?.projects ?? []).map((p) => [p.locationId, p]));
+  const visible = useMemo(() => (map?.locations ?? []).filter((l) => !l.indoor || showIndoor || l.id === here || l.id === selected || onPath.has(l.id) || adjacent.has(l.id)), [map, showIndoor, here, selected, onPath, adjacent]);
+  const baseAt = useMemo(() => new Map((map?.bases ?? []).map((b) => [b.locationId, b])), [map]);
+  const projAt = useMemo(() => new Map((map?.projects ?? []).map((p) => [p.locationId, p])), [map]);
 
   // ── Rótulos sem sobreposição (prioridade + colisão em pixels)
   const labels: { id: string; x: number; y: number; text: string; strong: boolean }[] = [];
@@ -166,14 +179,68 @@ export function MapPanel({ onClose }: { onClose: () => void }) {
   }
 
   // posição de quem está viajando
-  const tr = self.travel;
+  const tr = self?.travel;
   const travelPos = tr && byId.get(tr.fromId) && byId.get(tr.toId) ? (() => {
     const a = byId.get(tr.fromId)!, b = byId.get(tr.toId)!; const t = Math.min(1, tr.elapsedMs / Math.max(1, tr.durationMs));
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   })() : null;
 
+  const herePt = travelPos ?? byId.get(here) ?? null;
+  const { hordes } = useHordes();
   const matches = query.trim().length >= 2 ? (map?.locations ?? []).filter((l) => l.name.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : [];
-  const pick = (id: string) => { setSelected(id); const l = byId.get(id); if (l && view) { const sx = (l.x - v.x) / u, sy = (l.y - v.y) / u; if (sx < 40 || sy < 40 || sx > size.w - 40 || sy > size.h - 40) centerOn(id, l.indoor ? Math.min(v.w, 900) : undefined); } };
+  const pick = (id: string) => { setSelected(id); const l = byId.get(id); const cv = viewRef.current; if (l && cv) { const cu = cv.w / size.w; const sx = (l.x - cv.x) / cu, sy = (l.y - cv.y) / cu; if (sx < 40 || sy < 40 || sx > size.w - 40 || sy > size.h - 40) centerOn(id, l.indoor ? Math.min(cv.w, 900) : undefined); } };
+  const pickRef = useRef(pick); pickRef.current = pick;
+  const sizeRef = useRef(size); sizeRef.current = size;
+
+  // ── Camadas do SVG memorizadas: ao só arrastar (mesmo zoom), o React reaproveita tudo e só troca o viewBox.
+  const layers = useMemo(() => {
+    if (!map) return null;
+    const shown = (l: MapLocation) => !l.indoor || showIndoor || onPath.has(l.id) || adjacent.has(l.id) || l.id === here || l.id === selected;
+    return (
+      <>
+        {regionShapes.map((r) => (
+          <g key={r.id} className="cursor-pointer" onClick={() => { const sz = sizeRef.current; if (!drag.current?.moved) setView({ x: r.cx - r.rad * 1.15, y: r.cy - r.rad * 1.15 * sz.h / sz.w, w: r.rad * 2.3 }); }}>
+            <circle cx={r.cx} cy={r.cy} r={r.rad} fill={r.color} fillOpacity={0.07} stroke={r.color} strokeOpacity={0.55} strokeWidth={1.4 * u} strokeDasharray={`${9 * u} ${4 * u} ${2 * u} ${4 * u}`} />
+            <text x={r.cx} y={r.cy - r.rad + 26 * u} fill={r.color} fillOpacity={0.85} fontSize={19 * u} fontWeight={800} textAnchor="middle" fontFamily="var(--font-display)" letterSpacing={1.5 * u} stroke={PAPER} strokeWidth={4 * u} paintOrder="stroke">{r.name}</text>
+          </g>
+        ))}
+        {map.connections.map((c) => {
+          const a = byId.get(c.fromId), b = byId.get(c.toId); if (!a || !b) return null;
+          if (!shown(a) || !shown(b)) return null;
+          const st = ROADS[c.roadType] ?? ROADS.asphalt; const hot = pathEdges.has(`${a.id}|${b.id}`);
+          return (
+            <g key={c.id}>
+              {hot && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#f0a73a" strokeOpacity={0.7} strokeWidth={11 * u} strokeLinecap="round" />}
+              {c.roadType === 'asphalt' && !c.blocked && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={INK} strokeWidth={5 * u} strokeLinecap="round" />}
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c.blocked ? '#a52e25' : c.roadType === 'asphalt' ? '#d8c79a' : st.color} strokeWidth={(c.roadType === 'asphalt' && !c.blocked ? 2.4 : st.w) * u} strokeDasharray={c.blocked ? `${3 * u} ${3 * u}` : st.dash ? st.dash.split(' ').map((n) => Number(n) * u).join(' ') : undefined} strokeLinecap="round" />
+            </g>
+          );
+        })}
+        {visible.map((l) => {
+          const c = cat(l.category); const isHere = l.id === here && !travelPos; const isSel = l.id === selected; const adj = adjacent.has(l.id);
+          const zoomed = u < 2.4 && !l.indoor && c.icon;
+          const r = (isHere ? 9 : zoomed ? 9 : adj ? 6 : l.indoor ? 3.5 : 4.5) * u;
+          const Icon = c.icon; const base = baseAt.get(l.id); const proj = projAt.get(l.id);
+          return (
+            <g key={l.id} className="cursor-pointer" onPointerEnter={() => setHover(l.id)} onPointerLeave={() => setHover((h) => (h === l.id ? null : h))}
+              onClick={(e) => { e.stopPropagation(); if (!drag.current?.moved) pickRef.current(l.id); }}>
+              <circle cx={l.x} cy={l.y} r={r + (mobile ? 16 : 7) * u} fill="transparent" />
+              {l.danger >= 0.55 && <circle cx={l.x} cy={l.y} r={r + 3.5 * u} fill="none" stroke="#a52e25" strokeOpacity={l.danger >= 0.75 ? 0.9 : 0.6} strokeWidth={1.6 * u} strokeDasharray={l.danger >= 0.75 ? undefined : `${3 * u} ${2 * u}`} />}
+              {isSel && <rect x={l.x - r - 7 * u} y={l.y - r - 7 * u} width={(r + 7 * u) * 2} height={(r + 7 * u) * 2} fill="none" stroke={INK} strokeWidth={1.8 * u} />}
+              {adj && !isHere && <circle cx={l.x} cy={l.y} r={r + 5 * u} fill="none" stroke="#33562c" strokeWidth={1.8 * u} strokeDasharray={`${2.5 * u} ${2 * u}`} />}
+              <circle cx={l.x} cy={l.y} r={r} fill={isHere ? '#f0a73a' : zoomed ? PAPER : c.color} stroke={isHere ? INK : zoomed ? c.color : PAPER} strokeWidth={(zoomed ? 1.8 : isHere ? 2 : 1.2) * u} />
+              {zoomed && !isHere && Icon && <Glyph name={`loc-${l.category}`} x={l.x - 6.5 * u} y={l.y - 6.5 * u} size={13 * u} color={c.color} />}
+              {base && <g transform={`translate(${l.x + 8 * u} ${l.y - 18 * u})`}><rect width={15 * u} height={15 * u} fill={base.faction?.color ?? '#5f7340'} stroke={INK} strokeWidth={1 * u} /><Glyph name={base.faction ? `emblem:${base.faction.emblem}` : 'base'} x={2 * u} y={2 * u} size={11 * u} color="#101109" /></g>}
+              {proj && <g transform={`translate(${l.x - 23 * u} ${l.y - 18 * u})`}><rect width={15 * u} height={15 * u} fill="#f0a73a" stroke={INK} strokeWidth={1 * u} /><Glyph name="projects" x={2 * u} y={2 * u} size={11 * u} color="#101109" /></g>}
+              <title>{l.name}, {c.label.toLowerCase()}, perigo {dangerInfo(l.danger).label.toLowerCase()}</title>
+            </g>
+          );
+        })}
+      </>
+    );
+  }, [map, byId, regionShapes, visible, pathEdges, onPath, adjacent, here, selected, showIndoor, baseAt, projAt, mobile, !!travelPos, u]);
+
+  if (!self) return null;
 
   return (
     <section aria-label="Mapa do condado" className={mobile ? 'absolute inset-0 z-30 panel panel-plate flex flex-col anim-panel' : 'fixed inset-x-3 top-[60px] bottom-3 z-30 panel panel-plate flex flex-col anim-clipboard shadow-[0_20px_60px_rgba(0,0,0,.7)]'}>
@@ -218,7 +285,7 @@ export function MapPanel({ onClose }: { onClose: () => void }) {
             if (!touches.current.size) { pinch.current = null; setTimeout(() => { drag.current = null; }, 0); }
           }}
           onPointerCancel={(e) => { touches.current.delete(e.pointerId); if (!touches.current.size) { pinch.current = null; drag.current = null; } }}>
-          <div aria-hidden className="absolute inset-0 pointer-events-none opacity-30 mix-blend-multiply" style={{ backgroundImage: 'var(--grain)' }} />
+          {!mobile && <div aria-hidden className="absolute inset-0 pointer-events-none opacity-30 mix-blend-multiply" style={{ backgroundImage: 'var(--grain)' }} />}
           {!map || !view ? <div className="absolute inset-0 flex items-center justify-center font-[family-name:var(--font-hand)] text-[18px] text-[#4a4237]" role="status">Desenhando o mapa…</div> : (
             <svg width={size.w} height={size.h} viewBox={`${v.x} ${v.y} ${v.w} ${vh}`} className="absolute inset-0">
               <defs>
@@ -232,53 +299,16 @@ export function MapPanel({ onClose }: { onClose: () => void }) {
               </defs>
               <rect x={v.x} y={v.y} width={v.w} height={vh} fill="url(#topo)" />
               <rect x={v.x} y={v.y} width={v.w} height={vh} fill="url(#mapgrid)" />
-              {regionShapes.map((r) => (
-                <g key={r.id} className="cursor-pointer" onClick={() => { if (!drag.current?.moved) setView({ x: r.cx - r.rad * 1.15, y: r.cy - r.rad * 1.15 * size.h / size.w, w: r.rad * 2.3 }); }}>
-                  <circle cx={r.cx} cy={r.cy} r={r.rad} fill={r.color} fillOpacity={0.07} stroke={r.color} strokeOpacity={0.55} strokeWidth={1.4 * u} strokeDasharray={`${9 * u} ${4 * u} ${2 * u} ${4 * u}`} />
-                  <text x={r.cx} y={r.cy - r.rad + 26 * u} fill={r.color} fillOpacity={0.85} fontSize={19 * u} fontWeight={800} textAnchor="middle" fontFamily="var(--font-display)" letterSpacing={1.5 * u} stroke={PAPER} strokeWidth={4 * u} paintOrder="stroke">{r.name}</text>
-                </g>
-              ))}
-              {map.connections.map((c) => {
-                const a = byId.get(c.fromId), b = byId.get(c.toId); if (!a || !b) return null;
-                const shown = (l: MapLocation) => !l.indoor || showIndoor || onPath.has(l.id) || adjacent.has(l.id) || l.id === here || l.id === selected;
-                if (!shown(a) || !shown(b)) return null;
-                const st = ROADS[c.roadType] ?? ROADS.asphalt; const hot = pathEdges.has(`${a.id}|${b.id}`);
-                return (
-                  <g key={c.id}>
-                    {hot && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#f0a73a" strokeOpacity={0.7} strokeWidth={11 * u} strokeLinecap="round" style={{ mixBlendMode: 'multiply' }} />}
-                    {c.roadType === 'asphalt' && !c.blocked && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={INK} strokeWidth={5 * u} strokeLinecap="round" />}
-                    <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c.blocked ? '#a52e25' : c.roadType === 'asphalt' ? '#d8c79a' : st.color} strokeWidth={(c.roadType === 'asphalt' && !c.blocked ? 2.4 : st.w) * u} strokeDasharray={c.blocked ? `${3 * u} ${3 * u}` : st.dash ? st.dash.split(' ').map((n) => Number(n) * u).join(' ') : undefined} strokeLinecap="round" />
-                  </g>
-                );
-              })}
-              {visible.map((l) => {
-                const c = cat(l.category); const isHere = l.id === here && !travelPos; const isSel = l.id === selected; const adj = adjacent.has(l.id);
-                const zoomed = u < 2.4 && !l.indoor && c.icon;
-                const r = (isHere ? 9 : zoomed ? 9 : adj ? 6 : l.indoor ? 3.5 : 4.5) * u;
-                const Icon = c.icon; const base = baseAt.get(l.id); const proj = projAt.get(l.id);
-                return (
-                  <g key={l.id} className="cursor-pointer" onPointerEnter={() => setHover(l.id)} onPointerLeave={() => setHover((h) => (h === l.id ? null : h))}
-                    onClick={(e) => { e.stopPropagation(); if (!drag.current?.moved) pick(l.id); }}>
-                    <circle cx={l.x} cy={l.y} r={r + (mobile ? 16 : 7) * u} fill="transparent" />
-                    {l.danger >= 0.55 && <circle cx={l.x} cy={l.y} r={r + 3.5 * u} fill="none" stroke="#a52e25" strokeOpacity={l.danger >= 0.75 ? 0.9 : 0.6} strokeWidth={1.6 * u} strokeDasharray={l.danger >= 0.75 ? undefined : `${3 * u} ${2 * u}`} />}
-                    {isSel && <rect x={l.x - r - 7 * u} y={l.y - r - 7 * u} width={(r + 7 * u) * 2} height={(r + 7 * u) * 2} fill="none" stroke={INK} strokeWidth={1.8 * u} />}
-                    {adj && !isHere && <circle cx={l.x} cy={l.y} r={r + 5 * u} fill="none" stroke="#33562c" strokeWidth={1.8 * u} strokeDasharray={`${2.5 * u} ${2 * u}`} />}
-                    <circle cx={l.x} cy={l.y} r={r} fill={isHere ? '#f0a73a' : zoomed ? PAPER : c.color} stroke={isHere ? INK : zoomed ? c.color : PAPER} strokeWidth={(zoomed ? 1.8 : isHere ? 2 : 1.2) * u}>
-                      {isHere && !reducedMotion && <animate attributeName="r" values={`${r};${r * 1.3};${r}`} dur="2.4s" repeatCount="indefinite" />}
-                    </circle>
-                    {zoomed && !isHere && Icon && <Glyph name={`loc-${l.category}`} x={l.x - 6.5 * u} y={l.y - 6.5 * u} size={13 * u} color={c.color} />}
-                    {base && <g transform={`translate(${l.x + 8 * u} ${l.y - 18 * u})`}><rect width={15 * u} height={15 * u} fill={base.faction?.color ?? '#5f7340'} stroke={INK} strokeWidth={1 * u} /><Glyph name={base.faction ? `emblem:${base.faction.emblem}` : 'base'} x={2 * u} y={2 * u} size={11 * u} color="#101109" /></g>}
-                    {proj && <g transform={`translate(${l.x - 23 * u} ${l.y - 18 * u})`}><rect width={15 * u} height={15 * u} fill="#f0a73a" stroke={INK} strokeWidth={1 * u} /><Glyph name="projects" x={2 * u} y={2 * u} size={11 * u} color="#101109" /></g>}
-                    <title>{l.name}, {c.label.toLowerCase()}, perigo {dangerInfo(l.danger).label.toLowerCase()}</title>
-                  </g>
-                );
-              })}
+              {layers}
+              {hordes.map((h) => <HordeMark key={h.id} h={h} byId={byId} u={u} />)}
               {travelPos && (
-                <g><circle cx={travelPos.x} cy={travelPos.y} r={10 * u} fill="#f0a73a" stroke={INK} strokeWidth={2 * u}>{!reducedMotion && <animate attributeName="r" values={`${9 * u};${12 * u};${9 * u}`} dur="2.4s" repeatCount="indefinite" />}</circle>
+                <g><circle cx={travelPos.x} cy={travelPos.y} r={10 * u} fill="#f0a73a" stroke={INK} strokeWidth={2 * u} />
                   <Glyph name="travel" x={travelPos.x - 6 * u} y={travelPos.y - 6 * u} size={12 * u} color="#101109" /></g>
               )}
             </svg>
           )}
+          {/* "você está aqui" pulsando: anel em HTML animado só com transform/opacity (não repinta o mapa inteiro) */}
+          {map && view && herePt && !reducedMotion && <span aria-hidden className="map-pulse absolute pointer-events-none" style={{ left: (herePt.x - v.x) / u, top: (herePt.y - v.y) / u }} />}
           {/* rótulos em pixels (nítidos e sem sobreposição) */}
           {map && view && labels.map((lb) => (
             <div key={lb.id} aria-hidden className={`absolute pointer-events-none whitespace-nowrap -translate-x-1/2 ${lb.id === here ? 'tape !text-[13px] !py-0' : lb.strong ? 'font-[family-name:var(--font-plate)] font-bold text-[#1d1912]' : 'text-[#4a4237]'}`}
@@ -343,7 +373,10 @@ function PlaceInfo({ map, place, here, adjacent, path, onPick }: { map: WorldMap
           : adjacent ? (
             <>
               <div className="text-moss-400 text-[14px]">Ligado direto a onde você está{eta ? `, cerca de ${fmtDuration(eta)} a pé` : ''}.</div>
-              <button className="btn btn-moss w-full mt-2" disabled={!idle} onClick={() => { action('travel', { toId: place.id }); useGame.getState().set({ panel: null, route: null }); }}><GameIcon name="travel" size={16} />Ir para cá</button>
+              <div className="flex gap-2 mt-2">
+                <button className="btn btn-moss flex-1" disabled={!idle} onClick={() => { action('travel', { toId: place.id }); useGame.getState().set({ panel: null, route: null }); }}><GameIcon name="travel" size={16} />Ir para cá</button>
+                <button className="btn" disabled={!idle || self.needs.stamina < 25} title="Metade do tempo, −20 de fôlego e o dobro de chance de encontros" onClick={() => { action('travel', { toId: place.id, run: true }); useGame.getState().set({ panel: null, route: null }); }}>Correndo</button>
+              </div>
             </>
           ) : path ? (
             <>
@@ -369,8 +402,46 @@ function PlaceInfo({ map, place, here, adjacent, path, onPick }: { map: WorldMap
   );
 }
 
+function HordeList({ onPick }: { onPick: (id: string) => void }) {
+  const { hordes, gear } = useHordes();
+  return (
+    <div>
+      <div className="label mb-1">Hordas</div>
+      {hordes.length ? (
+        <div className="space-y-0.5">{hordes.map((h) => (
+          <button key={h.id} className="w-full text-left flex items-start gap-2 px-2 py-1 min-h-[32px] hover:bg-ink-800" onClick={() => onPick(h.locationId)}>
+            <GameIcon name="horde" size={15} className="text-blood-400 shrink-0 mt-0.5" />
+            <span className="text-[13.5px]">{hordeSizeLabel(h)} em <b>{h.locationName}</b>
+              {h.headingHere ? <span className="text-blood-400"> — vindo para cá{h.etaMinutes != null ? `, ~${h.etaMinutes} min` : ''}</span> : h.targetName ? <span className="text-ink-300"> — rumo a {h.targetName}</span> : null}
+            </span>
+          </button>
+        ))}</div>
+      ) : <p className="text-[13px] text-ink-400">{gear.radio ? 'O rádio não fala de nenhuma horda agora.' : gear.binoculars ? 'Nenhuma horda à vista.' : 'Nenhum gemido por perto.'}</p>}
+      {!gear.radio && <p className="text-[12.5px] text-ink-400 mt-1">{gear.binoculars ? 'O binóculo mostra hordas a até 2 trechos. Com um rádio, dá para saber de todas.' : 'Sem rádio ou binóculo, você só percebe hordas a 1 trecho, e não sabe para onde vão.'}</p>}
+    </div>
+  );
+}
+
+/** Horda no mapa: círculo vermelho com o tamanho e o caminho tracejado dos próximos trechos. */
+function HordeMark({ h, byId, u }: { h: HordeIntel; byId: Map<string, MapLocation>; u: number }) {
+  const at = byId.get(h.locationId); if (!at) return null;
+  const pts = [at, ...h.path.map((id) => byId.get(id)).filter(Boolean) as MapLocation[]];
+  const r = 11 * u;
+  return (
+    <g pointerEvents="none">
+      {pts.length > 1 && <polyline points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#a52e25" strokeOpacity={0.85} strokeWidth={2.6 * u} strokeDasharray={`${7 * u} ${4 * u}`} strokeLinecap="round" />}
+      {pts.length > 1 && (() => { const a = pts[pts.length - 2], b = pts[pts.length - 1]; const ang = Math.atan2(b.y - a.y, b.x - a.x); const s = 9 * u;
+        return <path d={`M ${b.x} ${b.y} L ${b.x - s * Math.cos(ang - 0.5)} ${b.y - s * Math.sin(ang - 0.5)} M ${b.x} ${b.y} L ${b.x - s * Math.cos(ang + 0.5)} ${b.y - s * Math.sin(ang + 0.5)}`} stroke="#a52e25" strokeWidth={2.6 * u} strokeLinecap="round" />; })()}
+      <circle cx={at.x} cy={at.y} r={r + 6 * u} fill="#a52e25" fillOpacity={0.18} />
+      <circle cx={at.x} cy={at.y} r={r} fill="#a52e25" stroke="#1b1610" strokeWidth={1.6 * u} />
+      <text x={at.x} y={at.y + 4 * u} fontSize={11 * u} fontWeight={800} fill="#f6e9e2" textAnchor="middle">{h.size ?? '?'}</text>
+      <title>Horda: {hordeSizeLabel(h)}</title>
+    </g>
+  );
+}
+
 function Overview({ map, here, onPick }: { map: WorldMap | null; here: string; onPick: (id: string) => void }) {
-  const { self, scene } = useGame();
+  const self = useGame((s) => s.self); const scene = useGame((s) => s.scene);
   const route = useGame((s) => s.route);
   if (!map || !self) return null;
   const hereLoc = map.locations.find((l) => l.id === here);
@@ -381,6 +452,7 @@ function Overview({ map, here, onPick }: { map: WorldMap | null; here: string; o
         <div className="font-display font-extrabold text-[28px] leading-none mt-1">{self.travel ? `Estrada para ${self.travel.toName}` : hereLoc?.name}</div>
         <div className="text-[13px] text-ink-400 mt-1">{map.regions.find((r) => r.id === hereLoc?.regionId)?.name}</div>
       </div>
+      <HordeList onPick={onPick} />
       {route && (
         <div className="border-l-4 border-amber-450 bg-[#101109] p-2.5">
           <div className="label text-amber-450 flex items-center gap-1"><GameIcon name="route" size={14} />Rota marcada</div>
@@ -408,6 +480,7 @@ function Overview({ map, here, onPick }: { map: WorldMap | null; here: string; o
           {Object.entries(ROADS).map(([k, r]) => <li key={k} className="flex items-center gap-2"><svg width="22" height="8" aria-hidden>{k === 'asphalt' && <line x1="1" y1="4" x2="21" y2="4" stroke={INK} strokeWidth={5} />}<line x1="1" y1="4" x2="21" y2="4" stroke={k === 'asphalt' ? '#d8c79a' : r.color} strokeWidth={k === 'asphalt' ? 2.4 : r.w} strokeDasharray={r.dash} /></svg>{r.label}</li>)}
           <li className="flex items-center gap-2"><svg width="22" height="8" aria-hidden><line x1="1" y1="4" x2="21" y2="4" stroke="#a52e25" strokeWidth={2} strokeDasharray="3 3" /></svg>Bloqueada</li>
           <li className="flex items-center gap-2"><svg width="22" height="10" aria-hidden><line x1="1" y1="5" x2="21" y2="5" stroke="#f0a73a" strokeOpacity={0.8} strokeWidth={9} /></svg>Rota marcada</li>
+          <li className="flex items-center gap-2"><svg width="22" height="16" aria-hidden><circle cx="8" cy="8" r="6" fill="#a52e25" stroke={INK} strokeWidth="1.5" /><line x1="14" y1="8" x2="22" y2="8" stroke="#a52e25" strokeWidth="2" strokeDasharray="3 2" /></svg>Horda e para onde vai (rádio ou binóculo)</li>
         </ul>
       </div>
       <div>
@@ -421,7 +494,7 @@ function Overview({ map, here, onPick }: { map: WorldMap | null; here: string; o
 
 // ───────────────────────── Rota na tela do jogo ─────────────────────────
 export function RouteBanner() {
-  const { self, scene } = useGame();
+  const self = useGame((s) => s.self); const scene = useGame((s) => s.scene);
   const route = useGame((s) => s.route);
   const map = useWorldMap();
   useEffect(() => {

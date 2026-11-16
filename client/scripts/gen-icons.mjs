@@ -52,6 +52,10 @@ const MAP = {
   log: 'log', firewood: 'wood-pile', nails: 'nails', metal_sheet: 'metal-bar', scrap_metal: 'gears', rope: 'rope-coil', tarp: 'barracks-tent',
   electronic_parts: 'circuitry', wire: 'wire-coil', gas_can: 'jerrycan', car_battery: 'car-battery', tire: 'car-wheel', engine_parts: 'gear-stick',
   car_keys: 'car-key',
+  binoculars: 'binoculars', firecrackers: 'fire-bomb', alarm_clock: 'alarm-clock', cassette_tape: 'audio-cassette', dog_tag: 'id-card', keycard: 'swipe-card',
+  ashcroft_keycard: 'swipe-card', old_photo: 'photo-camera', horde: 'shambling-zombie', hide: 'hidden', lure: 'megaphone',
+  dirty_rag: 'clothes', denim_jacket: 'moncler-jacket', work_jacket: 'sleeveless-jacket', biker_jacket: 'shoulder-armor', padded_vest: 'layered-armor',
+  work_gloves: 'winter-gloves', work_boots: 'steeltoe-boots', neck_guard: 'neck-bite',
   // categorias de local (mapa)
   'loc-hospital': 'hospital-cross', 'loc-clinic': 'hospital-cross', 'loc-police': 'police-badge', 'loc-store': 'shopping-cart', 'loc-supermarket': 'shopping-cart',
   'loc-commercial': 'shopping-cart', 'loc-pharmacy': 'medicine-pills', 'loc-school': 'school-bag', 'loc-gas_station': 'gas-pump', 'loc-restaurant': 'hot-meal',

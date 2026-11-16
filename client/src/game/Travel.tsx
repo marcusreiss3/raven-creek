@@ -98,6 +98,11 @@ export function TravelScreen({ onCharacterClick }: { onCharacterClick?: (c: Scen
             : !leader ? `Você está acompanhando ${leaderName ?? 'o grupo'}. Se parar, fica para trás, mas continua indo para ${t.toName}.`
             : 'A viagem continua no servidor mesmo se você fechar o navegador. Use Parar para interagir com quem viaja junto.'}
         </p>
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
+          <button className="btn !py-1" onClick={() => useGame.getState().set({ panel: 'inventory' })} title="Comer, beber, trocar de roupa, entregar itens a quem viaja junto"><GameIcon name="inventory" size={15} />Mochila</button>
+          <button className="btn !py-1" onClick={() => useGame.getState().set({ panel: 'body' })} title="Fazer curativo, tomar remédio"><GameIcon name="body" size={15} />Corpo e curativos</button>
+          <span className="text-[12.5px] text-ink-400 self-center">Dá para comer, beber e se tratar na estrada{paused ? '' : ' (pare a viagem se quiser ajudar alguém do grupo com calma)'}.</span>
+        </div>
         {nearby.length > 0 && (
           <div className="mt-3 pt-3 border-t border-ink-700">
             <div className="label flex items-center gap-1.5 mb-1.5"><GameIcon name="observe" size={14} />À vista na estrada (o chat Local chega até eles)</div>

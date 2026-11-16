@@ -20,6 +20,8 @@ type State = {
   typing: Record<number, number>;
   /** Muda quando algum projeto da comunidade muda (o painel recarrega). */
   projectsTick: number;
+  /** Muda quando alguma horda se move (mapa e alerta da cena buscam de novo). */
+  hordesTick: number;
   /** Mapa do condado (carregado uma vez) e rota planejada pelo jogador. */
   worldMap: WorldMap | null; route: null | { targetId: string; targetName: string };
   setTyping: (characterId: number, typing: boolean) => void;
@@ -31,7 +33,7 @@ let toastId = 1;
 export const useGame = create<State>((set, get) => ({
   user: null, characterId: null, content: null, self: null, scene: null, clock: null, messages: [], combat: null, combatEnd: null,
   toasts: [], panel: null, connected: false, blocks: [], modal: null, death: null,
-  typing: {}, projectsTick: 0, mobileTab: 'scene', chatPmTo: null, worldMap: null, route: (() => { try { return JSON.parse(localStorage.getItem('rc_route') ?? 'null'); } catch { return null; } })(),
+  typing: {}, projectsTick: 0, hordesTick: 0, mobileTab: 'scene', chatPmTo: null, worldMap: null, route: (() => { try { return JSON.parse(localStorage.getItem('rc_route') ?? 'null'); } catch { return null; } })(),
   setTyping: (characterId, typing) => {
     const next = { ...get().typing };
     if (typing) {

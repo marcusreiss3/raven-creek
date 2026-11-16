@@ -1,5 +1,5 @@
 import { NoteText } from './Stories';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 import { GameIcon, itemIcon } from '../components/GameIcon';
 import { useGame } from '../lib/store';
@@ -105,7 +105,11 @@ export function InventoryPanel({ onClose }: { onClose: () => void }) {
 function ItemDetail({ item: i, sheet }: { item: Item; sheet?: boolean }) {
   const { scene, self } = useGame();
   const [giveTo, setGiveTo] = useState('');
-  const others = scene?.characters.filter((c) => c.id !== self?.id) ?? [];
+  const [qty, setQty] = useState(i.quantity);
+  useEffect(() => { setQty(i.quantity); }, [i.id, i.quantity]);
+  const n = Math.max(1, Math.min(i.quantity, Math.floor(qty) || 1));
+  const traveling = self?.state === 'traveling' && !!self.travel;
+  const others = (traveling ? self!.travel!.companions ?? [] : scene?.characters ?? []).filter((c) => c.id !== self?.id);
   const p = i.props;
   const consumable = ['food', 'water', 'book'].includes(i.category) || p.smokable;
   const verb = p.smokable ? 'Fumar' : p.doses ? 'Tomar uma dose' : i.category === 'food' ? 'Comer' : i.category === 'water' ? 'Beber' : i.category === 'book' ? 'Ler' : 'Usar';
@@ -135,14 +139,27 @@ function ItemDetail({ item: i, sheet }: { item: Item; sheet?: boolean }) {
         {p.ammoType && i.slot === 'primary' && <button className="btn" onClick={() => action('reload')}>Recarregar</button>}
         {p.ammoType && (i.data.ammo ?? 0) > 0 && <button className="btn" onClick={() => action('unload', { itemId: i.id })}>Descarregar</button>}
         {i.durabilityMax > 0 && !p.doses && i.durability < i.durabilityMax && <button className="btn" title="Armas brancas: sucata + pregos + martelo · armas de fogo: sucata + componentes + chave de fenda · roupas: 2 trapos" onClick={() => action('repair_item', { itemId: i.id })}>Reparar</button>}
-        <button className="btn btn-danger" onClick={() => action('drop', { itemId: i.id })}>Largar</button>
+        {i.rippable && !i.slot && <button className="btn" title="Vira trapos para curativos e reparos (mais trapos se a peça estiver inteira)" onClick={() => action('tear', { itemId: i.id })}>Rasgar em trapos</button>}
+        {i.canDismantle && !i.rippable && <button className="btn" title="Destrói o item e devolve parte dos materiais" onClick={() => action('dismantle', { itemId: i.id })}>Desmontar</button>}
+      </div>
+      {i.quantity > 1 && (
+        <div className="flex items-center gap-2 mt-3 text-[13.5px] text-ink-300">
+          <label htmlFor={`qty-${i.id}`}>Quantidade para largar, entregar ou guardar</label>
+          <button type="button" className="btn !px-2 !py-0.5" aria-label="Menos um" onClick={() => setQty(Math.max(1, n - 1))}>−</button>
+          <input id={`qty-${i.id}`} type="number" inputMode="numeric" min={1} max={i.quantity} className="input !py-1 !w-16 text-center tabular-nums" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+          <button type="button" className="btn !px-2 !py-0.5" aria-label="Mais um" onClick={() => setQty(Math.min(i.quantity, n + 1))}>+</button>
+          <button type="button" className="text-[12.5px] underline text-ink-400 hover:text-ink-100" onClick={() => setQty(i.quantity)}>tudo ({i.quantity})</button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5 mt-2 max-sm:[&>button]:flex-1">
+        {!traveling && <button className="btn btn-danger" onClick={() => action('drop', { itemId: i.id, qty: n })}>Largar{i.quantity > 1 ? ` ${n}` : ''}</button>}
         {others.length > 0 && (
           <span className="flex gap-1">
             <select aria-label="Entregar para quem" className="input !py-1 !w-auto text-[13.5px]" value={giveTo} onChange={(e) => setGiveTo(e.target.value)}><option value="">Entregar para…</option>{others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <button className="btn" disabled={!giveTo} onClick={() => action('give', { targetId: Number(giveTo), itemId: i.id })}>Entregar</button>
+            <button className="btn" disabled={!giveTo} onClick={() => action('give', { targetId: Number(giveTo), itemId: i.id, qty: n })}>Entregar{i.quantity > 1 ? ` ${n}` : ''}</button>
           </span>
         )}
-        {scene?.containers.filter((c) => c.kind !== 'corpse').map((c) => <button key={c.id} className="btn" onClick={() => action('store', { itemId: i.id, containerId: c.id })}>Guardar em {c.name}</button>)}
+        {!traveling && scene?.containers.filter((c) => c.kind !== 'corpse').map((c) => <button key={c.id} className="btn" onClick={() => action('store', { itemId: i.id, containerId: c.id, qty: n })}>Guardar em {c.name}</button>)}
       </div>
     </div>
   );

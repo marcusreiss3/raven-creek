@@ -6,6 +6,7 @@ export type Needs = {
 export type Item = {
   id: number; defId: string; name: string; category: string; quantity: number; weight: number; durability: number; durabilityMax: number;
   slot: string | null; equipSlot: string | null; icon: string; rarity: string; description: string; props: Record<string, any>; data: { ammo?: number }; freshness?: number; note?: { mystery: string; title: string; text: string } | null;
+  canDismantle?: boolean; rippable?: number;
 };
 export type Wound = {
   id: number; region: string; regionName: string; type: string; typeName: string; severity: number; bleeding: number; pain: number; healing: number;
@@ -31,8 +32,8 @@ export type SelfState = {
   dog: Dog | null;
 };
 export type DogVariant = 'caramelo' | 'pastor' | 'preto';
-export type Dog = { id: number; name: string; look: string; variant: DogVariant; health: number; hunger: number; loyalty: number };
-export type SceneDog = { id: number; name: string; ownerId: number | null; status: string; look: string; variant: DogVariant; health: number; trust: number };
+export type Dog = { id: number; name: string; look: string; variant: DogVariant; health: number; hunger: number; loyalty: number; awayUntil?: string | null; scavengeReadyAt?: string | null; treatReadyAt?: string | null; petReadyAt?: string | null };
+export type SceneDog = { id: number; name: string; ownerId: number | null; status: string; look: string; variant: DogVariant; health: number; trust: number; away?: boolean };
 export type Clock = { total: number; day: number; hour: number; minute: number; phase: 'dawn' | 'day' | 'dusk' | 'night'; weather: string; temperature: number; isDark?: boolean; season?: 'spring' | 'summer' | 'autumn' | 'winter'; seasonDay?: number; daysPerSeason?: number };
 export type SceneChar = { id: number; name: string; portrait: string | null; portraitAdjust: { scale: number; x: number; y: number }; state: string; activity: string; appearance: string; online: boolean; userId: number; followingId: number | null; inCombat: boolean; visibleCondition: string };
 export type Scene = {
@@ -49,13 +50,14 @@ export type Scene = {
   campfire?: { lit: boolean; minutesLeft: number; canHaveFire: boolean }; smokeNearby?: string[]; canHunt?: boolean; canFish?: boolean; dogs?: SceneDog[];
   risen?: { id: number; name: string; portrait: string | null; inCombat: boolean; carrying: number }[];
   pendingCorpses?: { containerId: number; name: string; risesAt: string }[];
-  safes?: { mysteryId: string; name: string; digits: number }[];
+  safes?: { mysteryId: string; name: string; digits: number; keycard?: string }[];
   muralCount?: number;
 };
 export type MuralPost = { id: number; authorName: string; content: string; createdAt: string; characterId: number | null };
 export type MysteryView = {
-  id: string; title: string; teaser: string; total: number; found: number; status: 'open' | 'revealed' | 'claimed'; claimedBy: string | null; kind: 'safe' | 'stash';
-  fragments: ({ id: string; found: true; title: string; text: string; foundBy: string; foundAt: string } | { id: string; found: false; hint: string })[];
+  id: string; title: string; teaser: string; total: number; found: number; status: 'open' | 'revealed' | 'claimed'; claimedBy: string | null; kind: 'safe' | 'stash' | 'keycard';
+  pieces?: string; claimText?: string | null;
+  fragments: ({ id: string; found: true; icon?: string; title: string; text: string; foundBy: string; foundAt: string } | { id: string; found: false; icon?: string; hint: string })[];
 };
 export type ChatMsg = { id: number; channel: string; kind: string; locationId: string | null; frequency: number | null; characterId: number | null; userId: number | null; authorName: string; content: string; deleted: boolean; createdAt: string; toUserId: number | null };
 export type CombatUnit = {

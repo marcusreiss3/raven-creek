@@ -9,6 +9,7 @@ import { Bar, Gauge, Img, Tip, Confirm, fmtDuration, pad, WEATHER, PHASE, ROAD }
 import { GameIcon, FactionEmblem, itemIcon } from '../components/GameIcon';
 import { audio } from '../lib/audio';
 import { RisenFigures, StoryHotspots } from './Stories';
+import { HordeAlert, StopHidingButton } from './Hordes';
 import { RouteBanner } from './WorldMap';
 import { CampfireGlow, DogBadge, NatureActions, NatureHotspots, OwnerDog, SEASON_LABEL, StrayDogs } from './Nature';
 
@@ -45,16 +46,28 @@ export function TopBar() {
   const { self, scene, clock, set, user, connected } = useGame();
   const panel = useGame((s) => s.panel);
   useEffect(() => { if (panel) audio.sfx('ui_open', 0.4); }, [panel]);
+  const simpleHud = useHud((h) => h.simple);
+  // quantos indicadores cabem na barra (o resto vira um "+N" com a lista no balão)
+  const needsRef = useRef<HTMLUListElement>(null); const [needCap, setNeedCap] = useState(20);
+  useEffect(() => {
+    const el = needsRef.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => { const wide = window.innerWidth >= 1536; const item = wide ? 46 : 36; const gap = wide ? 14 : 8; const pad = wide ? 40 : 24; setNeedCap(Math.max(2, Math.floor((el.clientWidth - pad + gap) / (item + gap)))); };
+    const ro = new ResizeObserver(measure); ro.observe(el); measure();
+    return () => ro.disconnect();
+  }, [!!self]);
   if (!self) return null;
   const c = clock ?? self.clock;
-  const needs = buildNeeds(self);
-  const simpleHud = useHud((h) => h.simple);
+  const shown = buildNeeds(self).filter((x) => x.show);
+  const slots = needCap - (self.protectedUntil ? 1 : 0);
+  // críticos têm prioridade para aparecer; mantém a ordem original entre os visíveis
+  const keep = shown.length <= slots ? shown : (() => { const pri = [...shown].sort((a, b) => Number(!!b.critical) - Number(!!a.critical)).slice(0, Math.max(1, slots - 1)); return shown.filter((x) => pri.includes(x)); })();
+  const hidden = shown.filter((x) => !keep.includes(x));
   const btn = (p: Panel, icon: string, label: string, key: string) => {
     if (simpleHud && ADVANCED_PANELS.has(p)) return null;
     const on = panel === p;
     return (
       <Tip key={p} text={`${label} (${key})`}>
-        <button aria-label={`${label} (tecla ${key})`} aria-pressed={on} className={`relative h-11 w-10 flex items-center justify-center transition-colors ${on ? 'text-amber-450' : 'text-ink-300 hover:text-ink-100'}`} onClick={() => set({ panel: on ? null : p })}>
+        <button aria-label={`${label} (tecla ${key})`} aria-pressed={on} className={`relative h-11 w-9 2xl:w-10 flex items-center justify-center transition-colors ${on ? 'text-amber-450' : 'text-ink-300 hover:text-ink-100'}`} onClick={() => set({ panel: on ? null : p })}>
           <GameIcon name={icon} size={21} />
           {on && <span className="absolute bottom-0 left-2 right-2 h-[3px] bg-amber-450 shadow-[0_0_10px_#f0a73a]" />}
         </button>
@@ -66,9 +79,9 @@ export function TopBar() {
   return (
     <header className="h-[64px] shrink-0 flex items-stretch relative z-20 panel !outline-none border-b border-black" style={{ boxShadow: '0 6px 18px -6px rgba(0,0,0,.9)' }}>
       {/* letreiro do local */}
-      <div className="min-w-0 max-w-[30%] flex flex-col justify-center pl-5 pr-6 border-r border-black/70">
-        <h1 key={scene?.location.id ?? travelName} className="font-display font-extrabold text-[28px] leading-[0.95] tracking-[.01em] truncate text-ink-100 anim-stencil">{travelName ?? scene?.location.name ?? self.locationName}</h1>
-        <div className="flex items-center gap-3 text-[12.5px] mt-0.5 whitespace-nowrap">
+      <div className="min-w-[120px] max-w-[22%] 2xl:max-w-[26%] flex flex-col justify-center pl-4 pr-4 2xl:pl-5 2xl:pr-6 border-r border-black/70">
+        <h1 key={scene?.location.id ?? travelName} className="font-display font-extrabold text-[23px] 2xl:text-[28px] leading-[0.95] tracking-[.01em] truncate text-ink-100 anim-stencil">{travelName ?? scene?.location.name ?? self.locationName}</h1>
+        <div className="flex items-center gap-3 text-[12.5px] mt-0.5 whitespace-nowrap overflow-hidden">
           {self.travel ? <span className="text-ink-400 flex items-center gap-1"><GameIcon name={self.travel.mode === 'vehicle' ? 'vehicle' : 'travel'} size={13} />{self.travel.mode === 'vehicle' ? 'De veículo' : 'A pé'}</span> : <>
             {threat && <span className={`flex items-center gap-1 ${threat.tone}`}><GameIcon name="zombie" size={13} />{threat.text}</span>}
             {scene && <span className="text-ink-400">{scene.location.indoor ? 'Interior' : 'Ao ar livre'}, {scene.looted}</span>}
@@ -76,7 +89,7 @@ export function TopBar() {
         </div>
       </div>
       {/* rádio: hora, estação e clima */}
-      <div className="flex items-center gap-4 px-5 border-r border-black/70">
+      <div className="shrink-0 flex items-center gap-3 2xl:gap-4 px-3 2xl:px-5 border-r border-black/70">
         <Tip text={`${PHASE[c.phase]}, dia ${c.day}`}>
           <div className="flex flex-col items-center leading-none" aria-label={`${pad(c.hour)}:${pad(c.minute)}, ${PHASE[c.phase]}, dia ${c.day}`}>
             <span className="font-[family-name:var(--font-plate)] font-bold text-[25px] text-amber-450 tabular-nums" style={{ textShadow: '0 0 12px rgba(240,167,58,.55)' }}>{pad(c.hour)}:{pad(c.minute)}</span>
@@ -84,18 +97,18 @@ export function TopBar() {
           </div>
         </Tip>
         {c.season && <Tip text={`${SEASON_LABEL[c.season].name}, dia ${c.seasonDay ?? '?'} de ${c.daysPerSeason ?? '?'}\n${SEASON_LABEL[c.season].hint}`}>
-          <span className="flex flex-col items-center gap-0.5 text-tape" aria-label={SEASON_LABEL[c.season].name}><GameIcon name={c.season} size={20} /><span className="text-[11.5px] text-ink-400">{SEASON_LABEL[c.season].name}</span></span>
+          <span className="flex flex-col items-center gap-0.5 text-tape" aria-label={SEASON_LABEL[c.season].name}><GameIcon name={c.season} size={20} /><span className="text-[11.5px] text-ink-400 max-2xl:hidden">{SEASON_LABEL[c.season].name}</span></span>
         </Tip>}
         <Tip text={`${WEATHER[c.weather]}, ${c.temperature}°C`}>
           <span className="flex flex-col items-center gap-0.5 text-ink-200" aria-label={`${WEATHER[c.weather]}, ${c.temperature} graus`}><GameIcon name={c.weather} size={20} /><span className="text-[11.5px] text-ink-400 tabular-nums">{c.temperature}°C</span></span>
         </Tip>
       </div>
       {/* necessidades */}
-      <ul className="flex items-center gap-3.5 px-5 min-w-0" aria-label="Necessidades">
-        {needs.filter((x) => x.show).map((x) => (
-          <li key={x.key}>
+      <ul ref={needsRef} className="flex-1 flex items-center gap-2 2xl:gap-3.5 px-3 2xl:px-5 min-w-0" aria-label="Necessidades">
+        {keep.map((x) => (
+          <li key={x.key} className="shrink-0">
             <Tip text={x.tip}>
-              <div className="w-[46px] flex flex-col items-center gap-1" aria-label={`${x.name}: ${Math.round(x.v)}%${x.critical ? ', crítico' : ''}`}>
+              <div className="w-[36px] 2xl:w-[46px] flex flex-col items-center gap-1" aria-label={`${x.name}: ${Math.round(x.v)}%${x.critical ? ', crítico' : ''}`}>
                 <span className="relative" style={{ color: x.critical ? '#e0554a' : '#cfc9b2' }}>
                   <GameIcon name={x.icon} size={20} />
                   {x.critical && <span className="absolute -top-1 -right-2 w-[13px] h-[13px] rounded-full bg-blood-500 text-white text-[10px] font-bold leading-[13px] text-center pulse-red" aria-hidden>!</span>}
@@ -105,17 +118,24 @@ export function TopBar() {
             </Tip>
           </li>
         ))}
-        {self.protectedUntil && <li><Tip text="Proteção de novato: você não pode ser atacado por outros jogadores."><span className="text-moss-400 flex" aria-label="Proteção de novato ativa"><GameIcon name="protection" size={20} /></span></Tip></li>}
+        {hidden.length > 0 && (
+          <li className="shrink-0">
+            <Tip text={hidden.map((x) => x.tip.split('\n')[0]).join('\n')}>
+              <span className={`h-9 min-w-[30px] px-1 flex items-center justify-center border text-[13px] tabular-nums ${hidden.some((x) => x.critical) ? 'border-blood-500 text-blood-400' : 'border-ink-600 text-ink-300'}`} aria-label={`Mais ${hidden.length} indicadores: ${hidden.map((x) => x.name).join(', ')}`} tabIndex={0}>+{hidden.length}</span>
+            </Tip>
+          </li>
+        )}
+        {self.protectedUntil && <li className="shrink-0"><Tip text="Proteção de novato: você não pode ser atacado por outros jogadores."><span className="text-moss-400 flex" aria-label="Proteção de novato ativa"><GameIcon name="protection" size={20} /></span></Tip></li>}
       </ul>
       {/* painéis */}
-      <nav className="ml-auto flex items-center pr-2" aria-label="Painéis">
+      <nav className="ml-auto shrink-0 flex items-center pr-2" aria-label="Painéis">
         {!connected && <span className="chip text-blood-400 mr-2 pulse-red">Reconectando…</span>}
         {btn('inventory', 'inventory', 'Inventário', 'I')}{btn('body', 'body', 'Corpo', 'B')}{btn('skills', 'skills', 'Habilidades', 'K')}
         {btn('crafting', 'crafting', 'Fabricação', 'C')}{btn('base', 'base', 'Base', 'H')}{btn('projects', 'projects', 'Projetos da comunidade', 'G')}{btn('faction', 'faction', 'Facção', 'F')}{btn('map', 'map', 'Mapa', 'M')}
         {btn('journal', 'journal', 'Diário', 'J')}{btn('character', 'character', 'Personagem', 'P')}{btn('settings', 'settings', 'Som e opções', 'O')}
         <span className="w-px h-7 bg-black/70 mx-1.5" />
-        {user && user.role !== 'player' && <Tip text="Painel administrativo"><a className="h-11 w-10 flex items-center justify-center text-amber-450 hover:brightness-125" href="#/admin" aria-label="Painel administrativo"><Wrench size={18} /></a></Tip>}
-        <Tip text="Sair"><button className="h-11 w-10 flex items-center justify-center text-ink-400 hover:text-blood-400" aria-label="Sair da conta" onClick={async () => { await api('/auth/logout', { method: 'POST' }); location.reload(); }}><LogOut size={18} /></button></Tip>
+        {user && user.role !== 'player' && <Tip text="Painel administrativo"><a className="h-11 w-9 2xl:w-10 flex items-center justify-center text-amber-450 hover:brightness-125" href="#/admin" aria-label="Painel administrativo"><Wrench size={18} /></a></Tip>}
+        <Tip text="Sair"><button className="h-11 w-9 2xl:w-10 flex items-center justify-center text-ink-400 hover:text-blood-400" aria-label="Sair da conta" onClick={async () => { await api('/auth/logout', { method: 'POST' }); location.reload(); }}><LogOut size={18} /></button></Tip>
       </nav>
     </header>
   );
@@ -310,6 +330,7 @@ export function ActionBar() {
   return (
     <div className="shrink-0 panel !outline-none border-t border-black px-4 py-3 flex gap-5 items-stretch relative z-20" style={{ boxShadow: '0 -6px 18px -6px rgba(0,0,0,.9)' }}>
       <div className="flex flex-col gap-2 min-w-0">
+        <HordeAlert />
         <div className="flex gap-1.5 flex-wrap" role="toolbar" aria-label="Ações">
           <Tip text={lowEnergy ? 'Sem energia de exploração. Descanse ou durma; conversar, negociar e organizar continua liberado.' : 'Vasculhar o local. Gasta energia e estamina e faz barulho.'}>
             <button className="btn btn-moss" disabled={!!busy || self.state !== 'idle' || lowEnergy} onClick={() => { action('explore'); audio.sfx('footsteps', 0.5); }}>
@@ -330,6 +351,7 @@ export function ActionBar() {
           <div className="w-full max-w-md" role="status">
             <div className="flex justify-between text-[13px] mb-1"><span className="text-amber-450 font-semibold">{self.busyAction?.label ?? 'Ocupado'}…</span><span className="text-ink-300 tabular-nums">{fmtDuration(new Date(self.busyUntil!).getTime() - now)}</span></div>
             <Bar value={progress * 100} color="#f0a73a" />
+            <StopHidingButton />
           </div>
         )}
       </div>
@@ -351,10 +373,12 @@ export function MobileActions() {
   const lowEnergy = self.needs.energy < 14;
   return (
     <section aria-label="Ações">
+      <HordeAlert mobile />
       {busy && (
         <div className="mb-3" role="status">
           <div className="flex justify-between text-[14px] mb-1"><span className="text-amber-450 font-semibold">{self.busyAction?.label ?? 'Ocupado'}…</span><span className="text-ink-300 tabular-nums">{fmtDuration(new Date(self.busyUntil!).getTime() - now)}</span></div>
           <Bar value={progress * 100} color="#f0a73a" />
+          <StopHidingButton />
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 [&_.btn]:w-full [&_.btn]:justify-start [&_.btn]:min-h-[50px] [&_.btn]:text-[16.5px]" role="toolbar" aria-label="Ações">
@@ -390,7 +414,12 @@ export function ExitsPanel({ mobile }: { mobile?: boolean } = {}) {
         <p>A viagem leva tempo real e não pode ser cancelada recarregando a página; só voltando pelo caminho.</p>
         {preview[confirm.toId] && <p className="mt-2 text-ink-300">Tempo estimado a pé: {fmtDuration(preview[confirm.toId].durationMs)}</p>}
         {scene.characters.some((c) => c.followingId === self.id) && <p className="mt-2 text-moss-400">Quem está seguindo você vai junto.</p>}
-        {driving && <button className="btn btn-moss mt-3" onClick={() => { action('travel', { toId: confirm.toId, vehicle: true }); setConfirm(null); }}><GameIcon name="vehicle" size={16} />Ir de veículo</button>}
+        <div className="flex flex-wrap gap-2 mt-3">
+          {driving && <button className="btn btn-moss" onClick={() => { action('travel', { toId: confirm.toId, vehicle: true }); setConfirm(null); }}><GameIcon name="vehicle" size={16} />Ir de veículo</button>}
+          {!self.vehicleId && <button className="btn" disabled={self.needs.stamina < 25} onClick={() => { action('travel', { toId: confirm.toId, run: true }); setConfirm(null); }}
+            title="Chega na metade do tempo, mas cansa (−20 de fôlego) e o barulho dobra a chance de dar de cara com zumbis"><GameIcon name="travel" size={16} />Ir correndo{preview[confirm.toId] ? ` (${fmtDuration(preview[confirm.toId].durationMs / 2)})` : ''}</button>}
+        </div>
+        {!self.vehicleId && <p className="mt-1.5 text-[12.5px] text-ink-400">Correndo: metade do tempo, gasta fôlego e dobra a chance de encontros.{self.needs.stamina < 25 ? ' Você está sem fôlego para correr agora.' : ''}</p>}
       </div>} />
   );
   if (mobile) return (

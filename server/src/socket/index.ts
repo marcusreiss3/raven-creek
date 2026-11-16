@@ -29,6 +29,7 @@ import { systemEmote } from '../game/services/chat.js';
 import * as nature from '../game/services/nature.js';
 import * as dogs from '../game/services/dogs.js';
 import * as stories from '../game/services/stories.js';
+import * as hordes from '../game/services/hordes.js';
 import * as risen from '../game/services/risen.js';
 import { deliverMaterials, listProjects, startClaimPower, startProjectWork, togglePower } from '../game/services/projects.js';
 
@@ -36,18 +37,19 @@ const id = z.number().int().positive();
 /** Todas as ações aceitas do cliente, validadas por esquema. O servidor decide os resultados. */
 const actionSchemas = {
   explore: z.object({}), rest: z.object({}), sleep: z.object({}), wake: z.object({}),
-  travel: z.object({ toId: z.string(), vehicle: z.boolean().optional() }), travel_preview: z.object({ toId: z.string() }),
+  travel: z.object({ toId: z.string(), vehicle: z.boolean().optional(), run: z.boolean().optional() }), travel_preview: z.object({ toId: z.string() }),
   travel_decide: z.object({ choice: z.enum(['fight', 'sneak', 'retreat', 'detour']) }), travel_pause: z.object({ pause: z.boolean().optional() }), travel_back: z.object({}), travel_join: z.object({ targetId: id }),
   projects_list: z.object({}).optional(), project_deliver: z.object({ projectId: z.string(), itemId: z.string().optional() }), project_work: z.object({ projectId: z.string() }),
   project_claim: z.object({}).optional(), project_power: z.object({ on: z.boolean() }),
   fire_light: z.object({ itemId: id }), fire_out: z.object({}).optional(), hunt: z.object({}).optional(), fish: z.object({}).optional(),
-  mysteries_list: z.object({}).optional(), safe_open: z.object({ mysteryId: z.string(), code: z.string().max(12) }),
+  mysteries_list: z.object({}).optional(), horde_intel: z.object({}).optional(), horde_hide: z.object({}).optional(), horde_stop_hide: z.object({}).optional(),
+  horde_lure: z.object({ method: z.enum(['firecrackers', 'alarm_clock', 'horn', 'shout']) }), safe_open: z.object({ mysteryId: z.string(), code: z.string().max(12) }),
   mural_list: z.object({}).optional(), mural_post: z.object({ content: z.string().min(1).max(600) }), mural_delete: z.object({ postId: id }),
   corpse_destroy: z.object({ containerId: id }), risen_fight: z.object({ risenId: id }),
-  dog_tame: z.object({ dogId: id, itemId: id }), dog_feed: z.object({ itemId: id }), dog_rename: z.object({ name: z.string().min(2).max(20) }), dog_release: z.object({}).optional(), follow: z.object({ targetId: id.nullable() }),
+  dog_tame: z.object({ dogId: id, itemId: id }), dog_feed: z.object({ itemId: id }), dog_treat: z.object({ itemId: id }), dog_scavenge: z.object({}).optional(), dog_pet: z.object({}).optional(), dog_rename: z.object({ name: z.string().min(2).max(20) }), dog_release: z.object({}).optional(), follow: z.object({ targetId: id.nullable() }),
   pickup: z.object({ itemId: id, qty: z.number().int().positive().optional() }), drop: z.object({ itemId: id, qty: z.number().int().positive().optional() }),
   give: z.object({ targetId: id, itemId: id, qty: z.number().int().positive().optional() }), equip: z.object({ itemId: id, slot: z.string().optional() }),
-  unequip: z.object({ itemId: id }), use: z.object({ itemId: id }), repair_item: z.object({ itemId: id }), reload: z.object({}), unload: z.object({ itemId: id }),
+  unequip: z.object({ itemId: id }), use: z.object({ itemId: id }), repair_item: z.object({ itemId: id }), tear: z.object({ itemId: id }), dismantle: z.object({ itemId: id }), reload: z.object({}), unload: z.object({ itemId: id }),
   treat: z.object({ targetId: id, woundId: id.nullable().optional(), itemId: id }), diagnose: z.object({ targetId: id }), patient_sheet: z.object({ targetId: id }),
   amputate: z.object({ targetId: id, region: z.string() }), amputation_request: z.object({ targetId: id, region: z.string() }), amputation_consent: z.object({ actorId: id, region: z.string() }),
   container_open: z.object({ containerId: id }), store: z.object({ itemId: id, containerId: id, qty: z.number().int().positive().optional() }),
@@ -103,7 +105,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'rest': return survival.setActivity(c, 'resting');
     case 'sleep': return survival.setActivity(c, 'sleeping');
     case 'wake': return survival.setActivity(c, 'idle');
-    case 'travel': return startTravel(c, p.toId, { vehicle: p.vehicle });
+    case 'travel': return startTravel(c, p.toId, { vehicle: p.vehicle, run: p.run });
     case 'travel_preview': return previewTravel(c, p.toId);
     case 'travel_decide': return decideEncounter(c, p.choice);
     case 'travel_pause': return togglePause(c, p.pause);
@@ -120,6 +122,10 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'fish': return nature.startFish(c);
     case 'mysteries_list': return { ok: true, mysteries: await stories.listMysteries() };
     case 'safe_open': return stories.openSafe(c, p.mysteryId, p.code);
+    case 'horde_intel': return { ok: true, ...(await hordes.hordeIntel(c)) };
+    case 'horde_hide': return hordes.hideFromHorde(c);
+    case 'horde_stop_hide': return hordes.stopHiding(c);
+    case 'horde_lure': return hordes.lureHorde(c, p.method);
     case 'mural_list': return stories.listMural(c);
     case 'mural_post': return stories.postMural(c, p.content);
     case 'mural_delete': return stories.deleteMural(c, p.postId, user.role !== 'player');
@@ -127,6 +133,9 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'risen_fight': return risen.fightRisen(c, p.risenId);
     case 'dog_tame': return dogs.tameDog(c, p.dogId, p.itemId);
     case 'dog_feed': return dogs.feedDog(c, p.itemId);
+    case 'dog_treat': return dogs.treatDog(c, p.itemId);
+    case 'dog_scavenge': return dogs.sendDogScavenge(c);
+    case 'dog_pet': return dogs.petDog(c);
     case 'dog_rename': return dogs.renameDog(c, p.name);
     case 'dog_release': return dogs.releaseDog(c);
     case 'follow': return follow(c, p.targetId);
@@ -137,6 +146,8 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'unequip': return survival.unequip(c, p.itemId);
     case 'use': return survival.useItem(c, p.itemId);
     case 'repair_item': return survival.repairItem(c, p.itemId);
+    case 'tear': return survival.tearClothing(c, p.itemId);
+    case 'dismantle': return survival.dismantleItem(c, p.itemId);
     case 'reload': return survival.reload(c);
     case 'unload': return survival.unloadWeapon(c, p.itemId);
     case 'treat': return survival.treat(c, p.targetId, p.woundId ?? null, p.itemId);

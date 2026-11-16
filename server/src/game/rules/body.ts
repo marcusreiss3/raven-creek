@@ -14,7 +14,7 @@ export const WOUND_TYPES: Record<WoundType, { name: string; bleed: number; pain:
   puncture: { name: 'Perfuração', bleed: 0.25, pain: 28, clot: 0.2, heal: 0.6, open: true, contamination: 0.25 },
   bite: { name: 'Mordida', bleed: 0.22, pain: 35, clot: 0.3, heal: 0.5, open: true, contamination: 0.5 },
   bruise: { name: 'Contusão', bleed: 0, pain: 12, clot: 1, heal: 1.6, open: false, contamination: 0 },
-  fracture: { name: 'Fratura', bleed: 0, pain: 55, clot: 1, heal: 0.12, open: false, contamination: 0 },
+  fracture: { name: 'Fratura', bleed: 0, pain: 55, clot: 1, heal: 0.2, open: false, contamination: 0 },
   burn: { name: 'Queimadura', bleed: 0, pain: 40, clot: 1, heal: 0.5, open: true, contamination: 0.2 },
   gunshot: { name: 'Ferimento por projétil', bleed: 0.6, pain: 50, clot: 0.06, heal: 0.3, open: true, contamination: 0.3 },
   amputation: { name: 'Amputação', bleed: 0.9, pain: 70, clot: 0.05, heal: 0.25, open: true, contamination: 0.35 },

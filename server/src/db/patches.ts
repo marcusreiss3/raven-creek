@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, schema } from './index.js';
 import { ITEM_DEFS, RECIPES } from '../game/content/items.js';
-import { LOOT_TABLES } from '../game/content/loot.js';
+import { HORDE_GEAR_LOOT, LOOT_TABLES, PROTECTIVE_GEAR_LOOT } from '../game/content/loot.js';
 
 const itemRow = (d: (typeof ITEM_DEFS)[number]) => ({ id: d.id, name: d.name, category: d.category, description: d.description ?? '', weight: d.weight, volume: (d as any).volume ?? 1, stackable: !!d.stackable, maxStack: d.maxStack ?? 1, durabilityMax: d.durabilityMax ?? 0, rarity: d.rarity ?? 'common', equipSlot: d.equipSlot ?? null, icon: d.icon ?? 'generic', props: d.props ?? {} });
 
@@ -248,6 +248,80 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
         v.needs.energyRegenPerHour = 20; v.needs.energyRegenRestingMultiplier = 10; v.needs.energyRegenSleepingMultiplier = 12;
         await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
       }
+    },
+  },
+  {
+    version: 18, name: 'Fome e sede mais presentes, caça de 15 min, trapos sujos, roupas de proteção e novas receitas',
+    run: async () => {
+      const [g] = await db.select().from(schema.gameConfig).where(eq(schema.gameConfig.key, 'game'));
+      if (g?.value) {
+        const v = structuredClone(g.value);
+        if (v.needs) { v.needs.hungerPerHour = Math.max(Number(v.needs.hungerPerHour ?? 0), 12); v.needs.thirstPerHour = Math.max(Number(v.needs.thirstPerHour ?? 0), 15); }
+        if (v.nature) v.nature.huntMinutes = 15;
+        await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
+      }
+      const newItems = ['dirty_rag', 'denim_jacket', 'work_jacket', 'biker_jacket', 'padded_vest', 'work_gloves', 'work_boots', 'neck_guard'];
+      for (const id of newItems) { const d = ITEM_DEFS.find((x) => x.id === id); if (d) await db.insert(schema.itemDefs).values(itemRow(d) as any).onConflictDoNothing(); }
+      // roupas que agora dá para rasgar em trapos
+      for (const id of ['winter_coat', 'jeans', 'cargo_pants', 'scarf']) {
+        const [row] = await db.select().from(schema.itemDefs).where(eq(schema.itemDefs.id, id));
+        const d = ITEM_DEFS.find((x) => x.id === id);
+        if (row && d?.props?.rippable && !(row.props as any)?.rippable) await db.update(schema.itemDefs).set({ props: { ...(row.props as any), rippable: d.props.rippable } }).where(eq(schema.itemDefs.id, id));
+      }
+      for (const id of ['leftovers_meal', 'wash_rag', 'boil_rag', 'neck_guard_craft', 'padded_vest_craft']) {
+        const rec = RECIPES.find((r) => r.id === id);
+        if (rec) await db.insert(schema.recipes).values(rec as any).onConflictDoUpdate({ target: schema.recipes.id, set: rec as any });
+      }
+      for (const [tableId, adds] of Object.entries(PROTECTIVE_GEAR_LOOT)) {
+        const [t] = await db.select().from(schema.lootTables).where(eq(schema.lootTables.id, tableId));
+        if (!t) continue;
+        const entries = [...(t.entries as any[])];
+        for (const a of adds) if (!entries.some((x) => x.itemId === a.itemId)) entries.push(a);
+        await db.update(schema.lootTables).set({ entries }).where(eq(schema.lootTables.id, tableId));
+      }
+    },
+  },
+  {
+    version: 19, name: 'Hordas migrando devagar (binóculo, rojão, despertador) e itens dos novos mistérios',
+    run: async () => {
+      const [g] = await db.select().from(schema.gameConfig).where(eq(schema.gameConfig.key, 'game'));
+      if (g?.value?.hordes) {
+        const v = structuredClone(g.value);
+        v.hordes.moveEveryMinutes = Math.max(Number(v.hordes.moveEveryMinutes ?? 0), 30);
+        await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
+      }
+      for (const id of ['binoculars', 'firecrackers', 'alarm_clock', 'cassette_tape', 'old_photo', 'dog_tag', 'ashcroft_keycard']) {
+        const d = ITEM_DEFS.find((x) => x.id === id); if (d) await db.insert(schema.itemDefs).values(itemRow(d) as any).onConflictDoNothing();
+      }
+      for (const [tableId, adds] of Object.entries(HORDE_GEAR_LOOT)) {
+        const [t] = await db.select().from(schema.lootTables).where(eq(schema.lootTables.id, tableId));
+        if (!t) continue;
+        const entries = [...(t.entries as any[])];
+        for (const a of adds) if (!entries.some((x) => x.itemId === a.itemId)) entries.push(a);
+        await db.update(schema.lootTables).set({ entries }).where(eq(schema.lootTables.id, tableId));
+      }
+    },
+  },
+  {
+    version: 20, name: 'Combate mais tranquilo: zumbis andam menos; cicatrização 12x mais rápida (e mais ainda dormindo); kit de barricada; fogueira mais quente',
+    run: async () => {
+      const ap: Record<string, number> = { walker: 2, runner: 4, wanderer: 3 };
+      for (const [id, v] of Object.entries(ap)) {
+        await db.update(schema.zombieTypes).set({ stats: sql`jsonb_set(${schema.zombieTypes.stats}, '{ap}', to_jsonb(${v}::int))` })
+          .where(sql`${schema.zombieTypes.id} = ${id} and (${schema.zombieTypes.stats}->>'ap')::int > ${v}`);
+      }
+      const [g] = await db.select().from(schema.gameConfig).where(eq(schema.gameConfig.key, 'game'));
+      if (g?.value?.wounds) {
+        const v = structuredClone(g.value);
+        v.wounds.healingPerHourBase = Math.max(Number(v.wounds.healingPerHourBase ?? 0), 0.6);
+        if (v.nature) v.nature.fireWarmth = Math.max(Number(v.nature.fireWarmth ?? 0), 20);
+        await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
+      }
+      // as obras pediam "Kit de barricada", que não existia como item: agora existe e dá para montar
+      const kit = ITEM_DEFS.find((x) => x.id === 'barricade_kit');
+      if (kit) await db.insert(schema.itemDefs).values(itemRow(kit) as any).onConflictDoNothing();
+      const rec = RECIPES.find((r) => r.id === 'barricade_kit_craft');
+      if (rec) await db.insert(schema.recipes).values(rec as any).onConflictDoUpdate({ target: schema.recipes.id, set: rec as any });
     },
   },
 ];

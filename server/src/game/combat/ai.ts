@@ -40,7 +40,9 @@ export function runZombiePhase(s: CombatState, cfg: GameConfig) {
     z.ap = z.crawling ? 1 : z.maxAp;
     const taunter = z.tauntBy && (z.tauntUntil ?? 0) >= s.round ? s.units.find((u) => u.id === z.tauntBy && (u.out === null || u.out === 'down')) : undefined;
     const distracted = !taunter && ((z as any).distractedUntil ?? 0) >= s.round && z.lastKnown;
-    const target = taunter ?? (distracted && rng.chance(0.7) ? undefined : pickTarget(s, z));
+    const seen = taunter ? undefined : pickTarget(s, z);
+    // distraído por um barulho, só ignora quem está longe; alguém a 2 casas continua sendo a prioridade
+    const target = taunter ?? (distracted && seen && dist(seen, z) > 2 && rng.chance(0.7) ? undefined : seen);
     if (target) { z.targetId = target.id; z.lastKnown = { x: target.x, y: target.y }; z.aware = true; faceTo(z, target); }
     else if (z.targetId && !distracted) { z.targetId = null; log(s, `${z.name} perde você de vista.`, { unit: z.id, kind: 'lost' }); }
 

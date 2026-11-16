@@ -255,3 +255,7 @@ button:disabled { cursor: not-allowed; }
 .phone-light { background: radial-gradient(circle at 50% 60%, rgba(255, 240, 200, .16) 0%, rgba(255, 240, 200, .05) 22%, transparent 45%); mix-blend-mode: screen; pointer-events: none; }
 @keyframes alert-flash { 0%, 100% { background: rgba(120, 10, 10, .0); } 50% { background: rgba(160, 15, 15, .35); } }
 .alert-flash { animation: alert-flash 1s ease-in-out 3; pointer-events: none; }
+
+/* Mapa: anel pulsando em "você está aqui" (só transform/opacity, sem repintar o SVG) */
+.map-pulse { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 9999px; border: 2px solid #f0a73a; box-shadow: 0 0 8px rgba(240,167,58,.6); animation: map-pulse 2.4s ease-out infinite; will-change: transform, opacity; }
+@keyframes map-pulse { 0% { transform: scale(.55); opacity: .95; } 100% { transform: scale(1.6); opacity: 0; } }

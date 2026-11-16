@@ -15,6 +15,7 @@ import { startCombat } from './combat.js';
 import { findConnection, getLocation } from './world.js';
 import { canSee, roadTravels, sightingsMap, travelElapsed } from './roads.js';
 import { arrivalAmbush } from './zombies.js';
+import { spotHiddenStash } from './stories.js';
 import { isPowered } from './projects.js';
 
 type TravelRow = typeof schema.travels.$inferSelect;
@@ -52,7 +53,7 @@ export async function previewTravel(characterId: number, toId: string) {
  * Inicia uma viagem. Seguidores ociosos no mesmo local viajam junto (grupo); se o líder estiver
  * dirigindo, eles vão como passageiros. A duração do grupo é a do membro mais lento.
  */
-export async function startTravel(characterId: number, toId: string, opts: { vehicle?: boolean } = {}) {
+export async function startTravel(characterId: number, toId: string, opts: { vehicle?: boolean; run?: boolean } = {}) {
   return withCharacter(characterId, async (tx, ch) => {
     assertCanAct(ch);
     if (ch.followingId) {
@@ -86,11 +87,17 @@ export async function startTravel(characterId: number, toId: string, opts: { veh
       mode = 'vehicle'; duration = r.durationMs; factors = r.factors;
     } else {
       for (const m of members) { const r = await memberDuration(tx, m, conn!, from.indoor && to.indoor); if (r.durationMs > duration) { duration = r.durationMs; factors = r.factors; } }
+      if (opts.run) {
+        // correndo: metade do tempo, o dobro de chance de topar com algo no caminho, e cansa
+        for (const m of members) if ((m.needs.stamina ?? 100) < 25) fail(`${m.id === ch.id ? 'Você está' : `${fullName(m)} está`} sem fôlego para correr.`);
+        duration = Math.round(duration * 0.5); factors = [...factors, { label: 'Correndo', mult: 0.5 }];
+        for (const m of members) await tx.update(schema.characters).set({ needs: { ...m.needs, stamina: Math.max(0, (m.needs.stamina ?? 100) - 20) } }).where(eq(schema.characters.id, m.id));
+      }
     }
     // Encontro planejado (probabilidades configuráveis)
     const c = clock();
     let encounter: TravelRow['encounter'] = null;
-    if (rng.chance(encounterChance(cfg(), conn!.distance, Math.max(from.danger, to.danger), effectivePhase(c.phase, from.id, to.id), mode))) {
+    if (rng.chance(Math.min(0.95, encounterChance(cfg(), conn!.distance, Math.max(from.danger, to.danger), effectivePhase(c.phase, from.id, to.id), mode) * (opts.run && mode === 'walk' ? 2 : 1)))) {
       const ev = await pickEvent(tx, { scope: 'travel', roadType: conn!.roadType, vehicle: mode === 'vehicle', danger: to.danger });
       if (ev) encounter = { atMs: Math.round(duration * rng.range(0.25, 0.75)), eventId: ev.id, triggered: false, resolved: false };
     }
@@ -105,7 +112,7 @@ export async function startTravel(characterId: number, toId: string, opts: { veh
     }
     if (vehicle) await tx.update(schema.vehicles).set({ locationId: null }).where(eq(schema.vehicles.id, vehicle.id));
     const names = members.map(fullName).join(', ');
-    await systemEmote(from.id, `${names} ${members.length > 1 ? 'partem' : 'parte'} em direção a ${to.name}${mode === 'vehicle' ? ` de ${vehicle!.name.toLowerCase()}` : ''}.`);
+    await systemEmote(from.id, `${names} ${members.length > 1 ? 'partem' : 'parte'} ${opts.run && mode === 'walk' ? 'correndo ' : ''}em direção a ${to.name}${mode === 'vehicle' ? ` de ${vehicle!.name.toLowerCase()}` : ''}.`);
     for (const m of members) await gameLog(tx, m.id, 'travel', `Partiu de ${from.name} para ${to.name} (${Math.round(duration / 1000)}s).`);
     pushScene(from.id);
     return { ok: true, groupId, durationMs: duration, factors };
@@ -174,7 +181,7 @@ async function arrive(groupId: string) {
       if (v) await tx.update(schema.vehicles).set({ locationId: to.id, fuel: Math.max(0, v.fuel - ((conn?.distance ?? 0) / 1000) * v.consumption), tires: Math.max(0, v.tires - 0.3) }).where(eq(schema.vehicles.id, v.id));
     }
     if (names.length) await systemEmote(to.id, `${names.join(', ')} ${names.length > 1 ? 'chegam' : 'chega'} vindo de ${from.name}.`);
-    if (arrivedChars.length) await arrivalAmbush(tx, to.id, arrivedChars);
+    if (arrivedChars.length) { await spotHiddenStash(tx, to.id, arrivedChars); await arrivalAmbush(tx, to.id, arrivedChars); }
     pushScene(to.id);
   });
 }

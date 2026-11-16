@@ -179,7 +179,44 @@ describe('Progressão e anti-farm', () => {
 });
 
 
+describe('Fogueira', () => {
+  it('perto do fogo, num frio de inverno, o corpo esquenta e sai da hipotermia', () => {
+    const n = () => ({ ...needs(), bodyTemp: 35.2 });
+    const hypo = { kind: 'hypothermia', stage: 1, progress: 0, durationHours: 3, discovered: true, data: {} } as any;
+    const cold = simulate(n(), [], [hypo], [], 2 * 3_600_000, ctx({ indoor: false, temperature: -8 + 20, insulation: 0.3 }));
+    const fire = simulate(n(), [], [{ ...hypo }], [], 2 * 3_600_000, ctx({ indoor: false, temperature: -8 + 20, insulation: 0.3, nearFire: true }));
+    expect(fire.needs.bodyTemp).toBeGreaterThan(cold.needs.bodyTemp);
+    expect(fire.needs.bodyTemp).toBeGreaterThan(36.3);
+  });
+});
+
+describe('Sono', () => {
+  it('dormindo cicatriza mais rápido e alivia mais o estresse', () => {
+    const w = () => ({ ...makeWound('fracture', 'left_arm', 0.5, 't'), id: 1, splinted: true });
+    const n = () => ({ ...needs(), stress: 60 });
+    const awake = simulate(n(), [w()], [], [], 3_600_000, ctx());
+    const asleep = simulate(n(), [w()], [], [], 3_600_000, ctx({ activity: 'sleeping' }));
+    expect(asleep.wounds[0].healing).toBeGreaterThan(awake.wounds[0].healing * 2);
+    expect(asleep.needs.stress).toBeLessThan(awake.needs.stress - 8);
+  });
+});
+
 describe('Combate: táticas contra infectados', () => {
+  it('infectado na cara de alguém não larga a presa por um grito lá longe', () => {
+    setRandomSource(() => 0.01);
+    const walkerT = ZOMBIE_TYPES.find((z) => z.id === 'walker')!;
+    const P2 = (id: number, name: string) => ({ characterId: id, name, maxAp: 6, team: 1, stamina: 100, accuracyMult: 1, meleeMult: 1, canTwoHanded: true, skills: {}, attrs: { strength: 5, agility: 5 }, armor: {} });
+    const s = createCombat('street', [P2(1, 'Ana'), P2(2, 'Beto')], [{ type: 'walker', behavior: 'shambler', stats: walkerT.stats, name: 'Caminhante' }], { context: { type: 'location', locationId: 'x' }, isNight: false });
+    const [a, b, z] = s.units;
+    const row = s.tiles.findIndex((r) => /\.{12}/.test(r)); const col = s.tiles[row].indexOf('.'.repeat(12));
+    b.x = col; b.y = row; z.x = col + 1; z.y = row; z.targetId = b.id; z.aware = true; z.hidden = false;
+    a.x = col + 9; a.y = row;
+    expect(performAction(s, a.id, { type: 'taunt' }, cfg).ok).toBe(true);
+    expect(z.tauntBy ?? null).not.toBe(a.id);
+    runZombiePhase(s, cfg);
+    expect(Math.max(Math.abs(z.x - b.x), Math.abs(z.y - b.y))).toBeLessThanOrEqual(1); // continua em cima do Beto
+  });
+
   const walker = ZOMBIE_TYPES.find((z) => z.id === 'walker')!;
   const P = (id: number, name: string, extra: Record<string, unknown> = {}) => ({ characterId: id, name, maxAp: 6, team: 1, stamina: 100, accuracyMult: 1, meleeMult: 1, canTwoHanded: true, skills: {}, attrs: { strength: 5, agility: 5 }, armor: {}, ...extra });
   const Z = () => ({ type: 'walker', behavior: 'shambler', stats: walker.stats, name: 'Caminhante' });
@@ -190,7 +227,7 @@ describe('Combate: táticas contra infectados', () => {
     const s = two(); const [a, b, z] = s.units;
     const exit = s.exits[0];
     b.x = exit.x; b.y = exit.y; z.x = exit.x - 1; z.y = exit.y; z.targetId = b.id; z.aware = true; z.hidden = false;
-    a.x = exit.x - 4; a.y = exit.y;
+    a.x = exit.x - 3; a.y = exit.y; // o amigo grita ali do lado
     expect(performAction(s, a.id, { type: 'taunt' }, cfg).ok).toBe(true);
     expect(z.tauntBy).toBe(a.id);
     expect(performAction(s, b.id, { type: 'flee' }, cfg).ok).toBe(true);

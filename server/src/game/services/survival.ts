@@ -1,4 +1,4 @@
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { drink, smoke } from '../rules/addiction.js';
 import { schema, type Tx } from '../../db/index.js';
 import { charMod } from '../content/character.js';
@@ -9,7 +9,7 @@ import { clamp, rng } from '../rules/rng.js';
 import { assertCanAct, conditionsOf, withCharacter, withTwoCharacters, woundsOf } from './characters.js';
 import { cfg, clock, itemDef } from './config.js';
 import { fail, gameLog } from './infra.js';
-import { addItem, carryInfo, consumeItem, hasTool as hasToolIn, itemsOf, transferItem, type CharRow, type ItemRow } from './inventory.js';
+import { addItem, carryInfo, consumeItem, hasTool as hasToolIn, itemsOf, salvageOf, transferItem, type CharRow, type ItemRow } from './inventory.js';
 import { isUserOnline, notify, pushScene, pushSelf } from './realtime.js';
 import { systemEmote } from './chat.js';
 
@@ -38,6 +38,17 @@ async function ownedItem(tx: Tx, ch: CharRow, itemId: number) {
   return it!;
 }
 
+/** Estão juntos? No mesmo lugar (ninguém viajando) ou no mesmo grupo de viagem. */
+export async function sameSpot(tx: Tx, a: CharRow, b: CharRow) {
+  if (a.state !== 'traveling' && b.state !== 'traveling') return a.locationId === b.locationId;
+  if (a.state !== 'traveling' || b.state !== 'traveling') return false;
+  const live = ['active', 'paused', 'awaiting_decision', 'combat'];
+  const rows = await tx.select({ characterId: schema.travels.characterId, groupId: schema.travels.groupId, status: schema.travels.status }).from(schema.travels)
+    .where(inArray(schema.travels.characterId, [a.id, b.id]));
+  const ga = rows.find((r) => r.characterId === a.id && live.includes(r.status)); const gb = rows.find((r) => r.characterId === b.id && live.includes(r.status));
+  return !!ga && !!gb && ga.groupId === gb.groupId;
+}
+
 // ───────────────────────── Inventário ─────────────────────────
 export async function pickUp(characterId: number, itemId: number, qty?: number) {
   return withCharacter(characterId, async (tx, ch) => {
@@ -64,10 +75,10 @@ export async function dropItem(characterId: number, itemId: number, qty?: number
 
 export async function giveItem(characterId: number, targetId: number, itemId: number, qty?: number) {
   return withTwoCharacters(characterId, targetId, async (tx, ch, target) => {
-    assertCanAct(ch, { allowBusy: true });
-    if (!target.alive || target.locationId !== ch.locationId || target.state === 'traveling') fail('Essa pessoa não está aqui.');
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
+    if (!target.alive || !(await sameSpot(tx, ch, target))) fail('Essa pessoa não está aqui.');
     const it = await transferItem(tx, itemId, { type: 'character', id: ch.id }, { type: 'character', id: target.id }, qty);
-    await systemEmote(ch.locationId, `${fullName(ch)} entrega ${itemDef(it.defId)?.name} para ${fullName(target)}.`);
+    if (ch.state !== 'traveling') await systemEmote(ch.locationId, `${fullName(ch)} entrega ${itemDef(it.defId)?.name} para ${fullName(target)}.`);
     await gameLog(tx, target.id, 'trade', `${fullName(ch)} entregou ${itemDef(it.defId)?.name} para você.`);
     pushSelf(ch.id); pushSelf(target.id);
     return { ok: true };
@@ -119,7 +130,7 @@ export async function takeFromContainer(characterId: number, itemId: number, con
 
 export async function equip(characterId: number, itemId: number, slot?: EquipSlot) {
   return withCharacter(characterId, async (tx, ch) => {
-    assertCanAct(ch, { allowBusy: true, allowCombat: false });
+    assertCanAct(ch, { allowBusy: true, allowCombat: false, allowTravel: true });
     const it = await ownedItem(tx, ch, itemId);
     return equipInTx(tx, ch, it, slot);
   });
@@ -143,7 +154,7 @@ export async function equipInTx(tx: Tx, ch: CharRow, it: ItemRow, slot?: EquipSl
 }
 export async function unequip(characterId: number, itemId: number) {
   return withCharacter(characterId, async (tx, ch) => {
-    assertCanAct(ch, { allowBusy: true });
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
     await ownedItem(tx, ch, itemId);
     await tx.update(schema.items).set({ slot: null }).where(eq(schema.items.id, itemId));
     pushSelf(ch.id);
@@ -168,7 +179,7 @@ export async function reloadInTx(tx: Tx, ch: CharRow) {
   return { ammo: loaded + total, itemId: weapon!.id };
 }
 export async function reload(characterId: number) {
-  return withCharacter(characterId, async (tx, ch) => { assertCanAct(ch, { allowBusy: true }); const r = await reloadInTx(tx, ch); pushSelf(ch.id); return { ok: true, ...r }; });
+  return withCharacter(characterId, async (tx, ch) => { assertCanAct(ch, { allowBusy: true, allowTravel: true }); const r = await reloadInTx(tx, ch); pushSelf(ch.id); return { ok: true, ...r }; });
 }
 export async function unloadWeapon(characterId: number, itemId: number) {
   return withCharacter(characterId, async (tx, ch) => {
@@ -191,7 +202,7 @@ async function startDisease(tx: Tx, ch: CharRow, kind: string, msg: string) {
 
 export async function useItem(characterId: number, itemId: number) {
   return withCharacter(characterId, async (tx, ch) => {
-    assertCanAct(ch, { allowBusy: false });
+    assertCanAct(ch, { allowBusy: false, allowTravel: true });
     const it = await ownedItem(tx, ch, itemId); const d = itemDef(it.defId)!; const p = d.props; const n = { ...ch.needs };
     const msgs: string[] = []; const c = cfg().diseases;
     if (d.category === 'food' || d.category === 'water') {
@@ -232,7 +243,7 @@ export async function useItem(characterId: number, itemId: number) {
       fail('Use peças e combustível pelo painel do veículo.');
     } else fail('Não há uso direto para este item.');
     await tx.update(schema.characters).set({ needs: n }).where(eq(schema.characters.id, ch.id));
-    for (const m of msgs) await systemEmote(ch.locationId, m);
+    if (ch.state !== 'traveling') for (const m of msgs) await systemEmote(ch.locationId, m);
     pushSelf(ch.id);
     return { ok: true };
   });
@@ -244,12 +255,19 @@ function treatQuality(actor: CharRow) {
   return clamp(1 + lvl * cfg().wounds.medicalSkillTreatBonus, 0.6, 2) * charMod(actor.profession, actor.traits, 'treatment');
 }
 
+/** Trocar um curativo feito com trapo devolve o pano usado, sujo. */
+async function returnOldRag(tx: Tx, actor: CharRow, w: { bandaged: boolean; treatments: string[] }) {
+  if (!w.bandaged || !w.treatments.includes('rag')) return false;
+  await addItem(tx, 'character', actor.id, 'dirty_rag', 1);
+  return true;
+}
+
 /** Aplica um item médico em um ferimento (próprio ou de outro personagem no mesmo local). */
 export async function treat(actorId: number, targetId: number, woundId: number | null, itemId: number) {
   return withTwoCharacters(actorId, targetId, async (tx, actor, target) => {
-    assertCanAct(actor, { allowBusy: true, allowCombat: true });
+    assertCanAct(actor, { allowBusy: true, allowCombat: true, allowTravel: true });
     if (!target.alive) fail('Não há mais nada a fazer.');
-    if (actor.id !== target.id && (target.locationId !== actor.locationId || target.state === 'traveling')) fail('O paciente precisa estar no mesmo local.');
+    if (actor.id !== target.id && !(await sameSpot(tx, actor, target))) fail('O paciente precisa estar no mesmo local.');
     return treatInTx(tx, actor, target, woundId, itemId);
   });
 }
@@ -276,7 +294,10 @@ export async function treatInTx(tx: Tx, actor: CharRow, target: CharRow, woundId
       const w = needWound();
       if (!WOUND_TYPES[w.type as WoundType]?.open && w.type !== 'bruise') fail('Bandagem não ajuda neste tipo de lesão.');
       const quality = Number(d.props.quality ?? 1) * q * (actor.profession === 'nurse' ? charMod('nurse', [], 'bandageDurability') : 1);
-      await tx.update(schema.wounds).set({ bandaged: true, bandageDirt: Number(d.props.dirty ?? 0), treatments: [...w.treatments.filter((t) => !t.startsWith('q:')), 'bandage', `q:${quality.toFixed(2)}`] }).where(eq(schema.wounds.id, w.id));
+      const oldRag = await returnOldRag(tx, actor, w);
+      const isCloth = d.id === 'rag' || d.id === 'dirty_rag';
+      await tx.update(schema.wounds).set({ bandaged: true, bandageDirt: Number(d.props.dirty ?? 0), treatments: [...w.treatments.filter((t) => !t.startsWith('q:') && t !== 'rag'), 'bandage', `q:${quality.toFixed(2)}`, ...(isCloth ? ['rag'] : [])] }).where(eq(schema.wounds.id, w.id));
+      if (oldRag) notify(actor.userId, 'Você tira o trapo velho do curativo: ficou um trapo sujo. Lave antes de reaproveitar.', 'info');
       text = `${fullName(actor)} aplica ${d.name.toLowerCase()} ${who} (${regionName}).`; break;
     }
     case 'disinfect': {
@@ -312,7 +333,8 @@ export async function treatInTx(tx: Tx, actor: CharRow, target: CharRow, woundId
       text = `${fullName(actor)} ${self ? 'toma' : `administra a ${fullName(target)}`} antibióticos.`; xp = 2; break;
     case 'medkit': {
       const w = needWound();
-      await tx.update(schema.wounds).set({ bandaged: true, bandageDirt: 0, disinfected: true, contamination: w.contamination * 0.1, bleeding: w.bleeding * 0.6, treatments: [...w.treatments.filter((t) => !t.startsWith('q:')), 'medkit', `q:${(q * 1.25).toFixed(2)}`] }).where(eq(schema.wounds.id, w.id));
+      await returnOldRag(tx, actor, w);
+      await tx.update(schema.wounds).set({ bandaged: true, bandageDirt: 0, disinfected: true, contamination: w.contamination * 0.1, bleeding: w.bleeding * 0.6, treatments: [...w.treatments.filter((t) => !t.startsWith('q:') && t !== 'rag'), 'medkit', `q:${(q * 1.25).toFixed(2)}`] }).where(eq(schema.wounds.id, w.id));
       text = `${fullName(actor)} usa um kit de primeiros socorros ${who} (${regionName}).`; xp = 6;
       if (it.durability > 1) { await tx.update(schema.items).set({ durability: it.durability - 1 }).where(eq(schema.items.id, it.id)); }
       else await consumeItem(tx, it.id, 'character', actor.id, 1);
@@ -481,6 +503,53 @@ export async function repairItem(characterId: number, itemId: number) {
     await tx.update(schema.items).set({ durability: Math.min(cap, it.durability + gain), data: { ...it.data, repairs: repairs + 1 } }).where(eq(schema.items.id, it.id));
     await giveXp(tx, ch, skill, 5, `repair_${d.id}`);
     await systemEmote(ch.locationId, `${fullName(ch)} conserta ${d.name.toLowerCase()}.`);
+    pushSelf(ch.id);
+    return { ok: true };
+  });
+}
+
+// ───────────────────────── Rasgar e desmontar ─────────────────────────
+/** Rasga uma peça de roupa de pano em trapos (mais trapos quanto mais inteira estiver). */
+export async function tearClothing(characterId: number, itemId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: false, allowTravel: true });
+    const it = await ownedItem(tx, ch, itemId); const d = itemDef(it.defId)!;
+    const n = Number(d.props.rippable ?? 0);
+    if (!n) fail('Isso não dá para rasgar em trapos.');
+    if (it.slot) fail('Tire a peça antes de rasgar.');
+    const cond = d.durabilityMax ? it.durability / d.durabilityMax : 1;
+    const rags = Math.max(1, Math.round(n * (0.5 + cond * 0.5)));
+    await consumeItem(tx, it.id, 'character', ch.id, 1);
+    await addItem(tx, 'character', ch.id, 'rag', rags);
+    await giveXp(tx, ch, 'survival', 1, `tear_${d.id}`);
+    if (ch.state !== 'traveling') await systemEmote(ch.locationId, `${fullName(ch)} rasga ${d.name.toLowerCase()} em tiras de pano.`);
+    notify(ch.userId, `Você conseguiu ${rags} trapo${rags > 1 ? 's' : ''}.`, 'success');
+    pushSelf(ch.id);
+    return { ok: true, rags };
+  });
+}
+
+/** Desmonta um item e recupera parte do material (cerca de metade do que se gasta para fazê-lo). */
+export async function dismantleItem(characterId: number, itemId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: false, allowTravel: true });
+    const it = await ownedItem(tx, ch, itemId); const d = itemDef(it.defId)!;
+    const parts = salvageOf(d.id);
+    if (!parts) fail('Não há o que aproveitar desmontando isso.');
+    const cond = d.durabilityMax ? it.durability / d.durabilityMax : 1;
+    await consumeItem(tx, it.id, 'character', ch.id, 1);
+    const got: string[] = [];
+    for (const [idx, p] of parts!.entries()) {
+      const raw = p.qty * (cond < 0.25 ? 0.75 : 1);
+      let n = Math.floor(raw) + (rng.chance(raw - Math.floor(raw)) ? 1 : 0);
+      if (idx === 0) n = Math.max(1, n);
+      if (n <= 0) continue;
+      await addItem(tx, 'character', ch.id, p.itemId, n);
+      got.push(`${n}× ${itemDef(p.itemId)?.name ?? p.itemId}`);
+    }
+    await giveXp(tx, ch, 'carpentry', 1, `dismantle_${d.id}`);
+    if (ch.state !== 'traveling') await systemEmote(ch.locationId, `${fullName(ch)} desmonta ${d.name.toLowerCase()}.`);
+    notify(ch.userId, `Você desmontou ${d.name.toLowerCase()} e aproveitou: ${got.join(', ')}.`, 'success');
     pushSelf(ch.id);
     return { ok: true };
   });

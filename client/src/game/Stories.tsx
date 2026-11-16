@@ -17,7 +17,7 @@ const ago = (iso: string) => {
 export function StoryHotspots() {
   const scene = useGame((s) => s.scene);
   const [mural, setMural] = useState(false);
-  const [safe, setSafe] = useState<null | { mysteryId: string; name: string; digits: number }>(null);
+  const [safe, setSafe] = useState<null | { mysteryId: string; name: string; digits: number; keycard?: string }>(null);
   const [corpse, setCorpse] = useState<null | { containerId: number; name: string }>(null);
   const [fight, setFight] = useState<null | { id: number; name: string }>(null);
   if (!scene) return null;
@@ -34,7 +34,7 @@ export function StoryHotspots() {
         <Hotspot key={r.id} icon="risen" tone="danger" disabled={r.inCombat} onClick={() => setFight(r)}>{r.name}, infectado{r.inCombat ? ' (em confronto)' : ''}</Hotspot>
       ))}
       {mural && <MuralModal onClose={() => setMural(false)} />}
-      {safe && <SafeModal safe={safe} onClose={() => setSafe(null)} />}
+      {safe && (safe.keycard ? <KeycardModal door={safe} onClose={() => setSafe(null)} /> : <SafeModal safe={safe} onClose={() => setSafe(null)} />)}
       {corpse && <Confirm title="Fazer o que precisa ser feito" confirmLabel="Destruir o cérebro" onCancel={() => setCorpse(null)}
         onConfirm={() => { action('corpse_destroy', { containerId: corpse.containerId }); setCorpse(null); }}
         text={<p>O corpo de <b>{corpse.name}</b> ainda vai se levantar. Garantir que isso não aconteça pesa na consciência (estresse), mas os pertences continuam no corpo e ninguém vai precisar enfrentá-lo depois.</p>} />}
@@ -99,6 +99,23 @@ function MuralModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function KeycardModal({ door, onClose }: { door: { mysteryId: string; name: string; keycard?: string }; onClose: () => void }) {
+  const self = useGame((s) => s.self);
+  const has = self?.inventory.some((i) => i.defId === 'ashcroft_keycard');
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <Modal title={door.name} onClose={onClose}>
+      <p className="text-sm text-ink-300">Aço grosso, sem maçaneta. Ao lado, um leitor de crachá com uma luzinha piscando. Arrombar está fora de questão: precisa de {door.keycard ? <b>{door.keycard.toLowerCase()}</b> : 'um crachá'}.</p>
+      {!has && <p className="text-[13px] text-ink-400 mt-2">Você não tem o crachá. Alguém no condado pode ter achado (veja o diário, aba Mistérios).</p>}
+      {msg && <div className="text-center text-sm text-blood-400 my-2">{msg}</div>}
+      <div className="flex justify-end gap-2 mt-4">
+        <button className="btn" onClick={onClose}>Fechar</button>
+        <button className="btn btn-moss" disabled={!has} onClick={async () => { const r = await action('safe_open', { mysteryId: door.mysteryId, code: '' }); if (r.ok && r.opened) onClose(); else if (!r.ok) setMsg(r.error ?? 'Não abriu.'); }}><GameIcon name="keycard" size={16} />Passar o crachá</button>
+      </div>
+    </Modal>
+  );
+}
+
 function SafeModal({ safe, onClose }: { safe: { mysteryId: string; name: string; digits: number }; onClose: () => void }) {
   const [code, setCode] = useState(''); const [msg, setMsg] = useState<string | null>(null);
   return (
@@ -129,21 +146,22 @@ export function MysteriesTab() {
   if (!list) return <div className="text-sm text-ink-400">Carregando…</div>;
   return (
     <div className="space-y-4">
-      <p className="text-xs text-ink-400">Bilhetes aparecem ao vasculhar certos lugares. Cada um existe uma vez só: quem acha leva o papel, mas o texto fica aqui para todos. Juntem as peças.</p>
+      <p className="text-xs text-ink-400">Bilhetes, fitas, fotos e outras pistas aparecem ao vasculhar certos lugares. Cada uma existe uma vez só: quem acha leva o objeto, mas o conteúdo fica aqui para todos. Juntem as peças.</p>
       {list.map((m) => (
         <div key={m.id} className={`border p-3 ${m.status === 'claimed' ? 'border-moss-500/50' : m.found ? 'border-amber-450/40' : 'border-ink-700 opacity-70'}`}>
           <div className="flex justify-between items-baseline gap-2">
             <b className="font-display uppercase tracking-wide">{m.title}</b>
-            <span className="label shrink-0">{m.status === 'claimed' ? `resolvido por ${m.claimedBy}` : `${m.found}/${m.total} bilhetes`}</span>
+            <span className="label shrink-0">{m.status === 'claimed' ? `resolvido por ${m.claimedBy}` : `${m.found}/${m.total} ${m.total === 1 ? (m.pieces === 'fotos' ? 'foto' : m.pieces === 'fitas' ? 'fita' : 'pista') : m.pieces ?? 'bilhetes'}`}</span>
           </div>
           <div className="text-xs text-ink-400 italic mt-0.5">{m.teaser}</div>
           <div className="mt-2 space-y-2">{m.fragments.map((f) => f.found ? (
             <div key={f.id} className="paper-note px-3 py-2">
-              <div className="text-[13px] font-bold opacity-85 flex items-center gap-1"><GameIcon name="note" size={14} />{f.title}</div>
+              <div className="text-[13px] font-bold opacity-85 flex items-center gap-1"><GameIcon name={f.icon ?? 'note'} size={14} />{f.title}</div>
               <div className="text-[13px] leading-snug mt-0.5">{f.text}</div>
               <div className="text-[12px] opacity-75 mt-1">Achado por {f.foundBy}</div>
             </div>
           ) : <div key={f.id} className="text-xs text-ink-500 border border-dashed border-ink-700 px-3 py-1.5">{f.hint}</div>)}</div>
+          {m.claimText && <p className="mt-2 text-[13px] leading-snug italic text-ink-200 border-l-2 border-moss-500 pl-2">{m.claimText}</p>}
         </div>
       ))}
     </div>

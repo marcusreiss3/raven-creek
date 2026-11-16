@@ -37,6 +37,7 @@ export function connectSocket() {
   // ao receber uma mensagem de alguém, o balão dele some
   socket.on('chat:message', (m: ChatMsg) => { if (m.characterId) g().setTyping(m.characterId, false); });
   socket.on('projects:update', () => g().set({ projectsTick: Date.now() }));
+  socket.on('hordes:update', () => g().set({ hordesTick: Date.now() }));
   socket.on('chat:deleted', ({ id }: { id: number }) => g().set({ messages: g().messages.map((m) => (m.id === id ? { ...m, deleted: true, content: '[mensagem removida pela moderação]' } : m)) }));
   socket.on('notify', (n: { text: string; level: any; icon?: string }) => { g().toast(n.text, n.level, n.icon); if (n.level === 'danger') audio.sfx('notification'); });
   socket.on('combat:start', ({ combatId }) => { g().set({ combatEnd: null }); action('combat_view', { combatId }).then((r) => r.ok && g().set({ combat: r.combat })); audio.music('combat'); });
