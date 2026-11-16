@@ -239,6 +239,17 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    version: 17, name: 'Energia volta bem mais rápido (descansar ~30 min enche a barra)',
+    run: async () => {
+      const [g] = await db.select().from(schema.gameConfig).where(eq(schema.gameConfig.key, 'game'));
+      if (g?.value?.needs) {
+        const v = structuredClone(g.value);
+        v.needs.energyRegenPerHour = 20; v.needs.energyRegenRestingMultiplier = 10; v.needs.energyRegenSleepingMultiplier = 12;
+        await db.update(schema.gameConfig).set({ value: v, updatedAt: new Date() }).where(eq(schema.gameConfig.key, 'game'));
+      }
+    },
+  },
 ];
 
 export async function applyPatches() {

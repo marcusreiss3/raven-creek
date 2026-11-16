@@ -19,9 +19,10 @@ export const defaultGameConfig = {
     sleepRecoveryPerHour: 30,
     staminaRegenPerMinute: 8,
     staminaRegenRestingMultiplier: 2,
-    energyRegenPerHour: 10,
-    energyRegenRestingMultiplier: 2.5,
-    energyRegenSleepingMultiplier: 3.5,
+    /** Energia: parado/andando 20 por hora; descansando ~30 min de 0 a 100; dormindo ~25 min (cama ~17 min). */
+    energyRegenPerHour: 20,
+    energyRegenRestingMultiplier: 10,
+    energyRegenSleepingMultiplier: 12,
     stressDecayPerHour: 4,
     /** Velocidade do "tempo do corpo" enquanto o jogador está desconectado: fome, sede, sono, ferimentos,
      *  sangramento, infecção, doenças, cicatrização e energia. 0 = o corpo fica congelado offline e só evolui
