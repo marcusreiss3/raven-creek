@@ -73,7 +73,8 @@ export async function startTravel(characterId: number, toId: string, opts: { veh
     const members = [ch, ...followers];
     let mode: 'walk' | 'vehicle' = 'walk'; let vehicle: typeof schema.vehicles.$inferSelect | undefined; let duration = 0; let factors: { label: string; mult: number }[] = [];
     if (opts.vehicle) {
-      [vehicle] = await tx.select().from(schema.vehicles).where(and(eq(schema.vehicles.driverId, ch.id), eq(schema.vehicles.locationId, ch.locationId))).for('update');
+      // o veículo em que a pessoa está agora (não qualquer um em que ela tenha sentado antes)
+      if (ch.vehicleId) [vehicle] = await tx.select().from(schema.vehicles).where(and(eq(schema.vehicles.id, ch.vehicleId), eq(schema.vehicles.driverId, ch.id), eq(schema.vehicles.locationId, ch.locationId))).for('update');
       if (!vehicle) fail('Você não está ao volante de um veículo aqui.');
       if (!vehicle!.running) fail('O motor está desligado.');
       if (!cfg().travel.vehicleAllowedRoads.includes(conn!.roadType)) fail('Veículos não passam por esse caminho.');

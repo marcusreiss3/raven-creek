@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { schema } from '../../db/index.js';
 import { charMod } from '../content/character.js';
 import { clamp, rng } from '../rules/rng.js';
@@ -33,6 +33,8 @@ export async function enterVehicle(characterId: number, vehicleId: number) {
     }
     if (v.factionId) { const [m] = await tx.select().from(schema.factionMembers).where(eq(schema.factionMembers.characterId, ch.id)); if (!m || m.factionId !== v.factionId) fail('Este veículo pertence a outra facção.'); }
     if (ch.amputations.some((a) => a.includes('leg') || a.includes('foot'))) fail('Sem uma das pernas você não consegue dirigir.');
+    // trocar de veículo (ex.: do carro para a moto) larga o volante do anterior — senão a pessoa ficava "ao volante" dos dois
+    await tx.update(schema.vehicles).set({ driverId: null, running: false }).where(and(eq(schema.vehicles.driverId, ch.id), ne(schema.vehicles.id, v.id)));
     await tx.update(schema.vehicles).set({ driverId: ch.id }).where(eq(schema.vehicles.id, v.id));
     await tx.update(schema.characters).set({ vehicleId: v.id }).where(eq(schema.characters.id, ch.id));
     await systemEmote(ch.locationId, `${fullName(ch)} assume o volante de ${v.name.toLowerCase()}.`);
