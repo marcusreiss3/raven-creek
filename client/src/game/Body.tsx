@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Stethoscope, Scissors } from 'lucide-react';
 import { GameIcon } from '../components/GameIcon';
 import { useGame } from '../lib/store';
@@ -52,24 +52,39 @@ function Patterns() {
   );
 }
 
+type PatientSheet = { id: number; name: string; firstName: string; amputations: any; wounds: Wound[]; conditions: any[]; needs: { blood: number; health: number; pain: number; vitality: number; bodyTemp: number; painkillerUntil?: number; antibioticUntil?: number; [k: string]: any } };
+
 export function BodyPanel({ onClose }: { onClose: () => void }) {
   const { self, scene } = useGame();
   const [region, setRegion] = useState<string | null>(null);
-  const [patient, setPatient] = useState<number | null>(null);
+  // "Prestar socorro" abre a ficha de outra pessoa; o menu normal abre a sua
+  const [patient, setPatient] = useState<number | null>(() => useGame.getState().bodyPatient ?? null);
+  useEffect(() => { if (useGame.getState().bodyPatient) useGame.getState().set({ bodyPatient: null }); }, []);
+  const [sheet, setSheet] = useState<PatientSheet | null>(null);
+  const loadSheet = () => { if (patient) action<{ patient: PatientSheet }>('patient_sheet', { targetId: patient }, { silent: true }).then((r) => { if (r.ok) setSheet(r.patient); }); };
+  useEffect(() => { setSheet(null); setRegion(null); if (!patient) return; loadSheet(); const t = setInterval(loadSheet, 4000); return () => clearInterval(t); }, [patient]);
   const [amp, setAmp] = useState<null | { region: string; targetId: number }>(null);
   if (!self) return null;
-  const amps = lost(self.amputations);
-  const byRegion = (r: string) => self.wounds.filter((w) => w.region === r);
+  const view: PatientSheet = patient && sheet ? sheet : { id: self.id, name: self.name, firstName: self.firstName, amputations: self.amputations, wounds: self.wounds, conditions: self.conditions, needs: self.needs };
+  const other = !!patient && !!sheet;
+  const amps = lost(view.amputations);
+  const byRegion = (r: string) => view.wounds.filter((w) => w.region === r);
   const meds = self.inventory.filter((i) => i.category === 'medical');
   const others = scene?.characters.filter((c) => c.id !== self.id) ?? [];
-  const sel = region ? byRegion(region) : self.wounds;
-  const n = self.needs;
+  const sel = region ? byRegion(region) : view.wounds;
+  const n = view.needs;
   return (
-    <Drawer title="Ficha médica" onClose={onClose} width={740} icon={<GameIcon name="body" size={22} />}>
+    <Drawer title={other ? `Socorro: ${view.name}` : 'Ficha médica'} onClose={onClose} width={740} icon={<GameIcon name={other ? 'aid' : 'body'} size={22} />}>
+      {patient && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 border-l-4 border-moss-400 bg-black/25 px-3 py-2 text-[14px]">
+          <span>{other ? <>Você está vendo a ficha de <b>{view.name}</b>. Os remédios usados aqui vão nele(a).</> : 'Carregando a ficha do paciente…'}</span>
+          <button className="btn !py-1 !text-[13px]" onClick={() => setPatient(null)}>Ver a minha ficha</button>
+        </div>
+      )}
       <div className="grid grid-cols-[236px_1fr] max-sm:grid-cols-1 gap-5">
         <div className="panel-paper px-3 pt-3 pb-4 self-start rotate-[-.6deg] max-sm:w-full max-sm:max-w-[260px] max-sm:mx-auto">
           <div className="flex justify-between items-baseline font-[family-name:var(--font-hand)] text-[#3b2f1f] px-1">
-            <span className="text-[17px] font-bold">Triagem</span><span className="text-[14px]">{self.firstName}</span>
+            <span className="text-[17px] font-bold">Triagem</span><span className="text-[14px]">{view.firstName}</span>
           </div>
           <svg viewBox="0 0 200 380" className="w-full mt-1" role="group" aria-label="Regiões do corpo: clique para filtrar ferimentos">
             <Patterns />
@@ -102,12 +117,12 @@ export function BodyPanel({ onClose }: { onClose: () => void }) {
             {n.painkillerUntil && n.painkillerUntil > Date.now() ? <span className="chip text-steel-400"><GameIcon name="painkillers" size={13} />Sob analgésicos</span> : null}
             {n.antibioticUntil && n.antibioticUntil > Date.now() ? <span className="chip text-moss-400"><GameIcon name="antibiotics" size={13} />Antibióticos ativos</span> : null}
           </div>
-          {self.mods.notes.length > 0 && <ul className="mb-5 space-y-1 border-l-2 border-amber-450/60 pl-3">{self.mods.notes.map((x) => <li key={x} className="text-[13.5px] text-amber-200 flex items-start gap-1.5"><GameIcon name="danger" size={14} className="mt-0.5 text-amber-450" />{x}</li>)}</ul>}
+          {!other && self.mods.notes.length > 0 && <ul className="mb-5 space-y-1 border-l-2 border-amber-450/60 pl-3">{self.mods.notes.map((x) => <li key={x} className="text-[13.5px] text-amber-200 flex items-start gap-1.5"><GameIcon name="danger" size={14} className="mt-0.5 text-amber-450" />{x}</li>)}</ul>}
           <Section title={region ? `Ferimentos: ${NAMES[region].toLowerCase()}` : 'Ferimentos'} right={region && <button className="text-[13px] text-ink-300 hover:text-ink-100 underline underline-offset-2" onClick={() => setRegion(null)}>ver todos</button>}>
-            {sel.length ? <div className="space-y-2">{sel.map((w) => <WoundCard key={w.id} w={w} meds={meds} />)}</div> : <Empty>Nenhum ferimento{region ? ' nesta região' : ''}.</Empty>}
+            {sel.length ? <div className="space-y-2">{sel.map((w) => <WoundCard key={w.id} w={w} meds={meds} targetId={view.id} onDone={loadSheet} />)}</div> : <Empty>Nenhum ferimento{region ? ' nesta região' : ''}.</Empty>}
           </Section>
           <Section title="Doenças e condições">
-            {self.conditions.length ? self.conditions.map((c) => (
+            {view.conditions.length ? view.conditions.map((c) => (
               <div key={c.id} className={`border-l-4 bg-[#101109] px-3 py-2 mb-1.5 text-[14px] ${c.hidden ? 'border-ink-500' : 'border-blood-500'}`}>
                 <div className="flex justify-between items-center"><b className="flex items-center gap-1.5"><GameIcon name={c.kind === 'zombie_infection' ? 'infection' : c.hidden ? 'danger' : 'infection'} size={15} className={c.hidden ? 'text-ink-400' : 'text-blood-400'} />{c.name}</b><span className="text-[12.5px] text-ink-400">estágio {c.stage}{c.progress !== undefined ? `, ${Math.round(c.progress * 100)}%` : ''}</span></div>
                 {c.symptoms && <div className="text-[13px] text-ink-300 mt-0.5">{c.symptoms}</div>}
@@ -115,14 +130,14 @@ export function BodyPanel({ onClose }: { onClose: () => void }) {
               </div>
             )) : <Empty>Nada diagnosticado.</Empty>}
           </Section>
-          <Addictions />
+          {!other && <Addictions />}
           <Section title="Tratar e procedimentos">
             <div className="flex gap-2 flex-wrap items-center">
               <select aria-label="Paciente" className="input !py-1.5 !w-auto text-[14px]" value={patient ?? ''} onChange={(e) => setPatient(Number(e.target.value) || null)}>
                 <option value="">Você mesmo</option>{others.map((c) => <option key={c.id} value={c.id}>{c.name}{c.visibleCondition !== 'normal' ? ` (${c.visibleCondition})` : ''}</option>)}
               </select>
               <button className="btn" onClick={() => action('diagnose', { targetId: patient ?? self.id })}><Stethoscope size={14} />Examinar</button>
-              {patient && meds.map((m) => <button key={m.id} className="btn !py-1" onClick={() => action('treat', { targetId: patient, itemId: m.id })}>{m.name}</button>)}
+              {patient && meds.map((m) => <button key={m.id} className="btn !py-1" onClick={() => action('treat', { targetId: patient, itemId: m.id }).then(loadSheet)}>{m.name}</button>)}
             </div>
             <div className="flex gap-2 flex-wrap items-center mt-3">
               <span className="label">Amputação de emergência:</span>
@@ -145,8 +160,7 @@ export function BodyPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function WoundCard({ w, meds }: { w: Wound; meds: { id: number; name: string; props: Record<string, any>; quantity: number }[] }) {
-  const self = useGame((s) => s.self)!;
+function WoundCard({ w, meds, targetId, onDone }: { w: Wound; meds: { id: number; name: string; props: Record<string, any>; quantity: number }[]; targetId: number; onDone?: () => void }) {
   const applicable = meds.filter((m) => {
     const u = m.props.use;
     if (u === 'splint') return w.type === 'fracture' && !w.splinted;
@@ -172,7 +186,7 @@ function WoundCard({ w, meds }: { w: Wound; meds: { id: number; name: string; pr
         {w.disinfected && <span className="chip text-moss-400">desinfetado</span>}{w.sutured && <span className="chip">suturado</span>}{w.splinted && <span className="chip">imobilizado</span>}
         {w.contaminated && !w.infected && <span className="chip text-amber-450">sujo</span>}{w.infected && <span className="chip text-[#9bb34b]">infeccionado</span>}
       </div>
-      {applicable.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{applicable.map((m) => <button key={m.id} className="btn !py-1 !text-[11px]" onClick={() => action('treat', { targetId: self.id, woundId: w.id, itemId: m.id })}>{m.name} ({m.quantity})</button>)}</div>}
+      {applicable.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{applicable.map((m) => <button key={m.id} className="btn !py-1 !text-[11px]" onClick={() => action('treat', { targetId, woundId: w.id, itemId: m.id }).then(() => onDone?.())}>{m.name} ({m.quantity})</button>)}</div>}
     </div>
   );
 }

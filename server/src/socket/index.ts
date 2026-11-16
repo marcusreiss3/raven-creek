@@ -48,7 +48,7 @@ const actionSchemas = {
   pickup: z.object({ itemId: id, qty: z.number().int().positive().optional() }), drop: z.object({ itemId: id, qty: z.number().int().positive().optional() }),
   give: z.object({ targetId: id, itemId: id, qty: z.number().int().positive().optional() }), equip: z.object({ itemId: id, slot: z.string().optional() }),
   unequip: z.object({ itemId: id }), use: z.object({ itemId: id }), repair_item: z.object({ itemId: id }), reload: z.object({}), unload: z.object({ itemId: id }),
-  treat: z.object({ targetId: id, woundId: id.nullable().optional(), itemId: id }), diagnose: z.object({ targetId: id }),
+  treat: z.object({ targetId: id, woundId: id.nullable().optional(), itemId: id }), diagnose: z.object({ targetId: id }), patient_sheet: z.object({ targetId: id }),
   amputate: z.object({ targetId: id, region: z.string() }), amputation_request: z.object({ targetId: id, region: z.string() }), amputation_consent: z.object({ actorId: id, region: z.string() }),
   container_open: z.object({ containerId: id }), store: z.object({ itemId: id, containerId: id, qty: z.number().int().positive().optional() }),
   take: z.object({ itemId: id, containerId: id, qty: z.number().int().positive().optional() }),
@@ -141,6 +141,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'unload': return survival.unloadWeapon(c, p.itemId);
     case 'treat': return survival.treat(c, p.targetId, p.woundId ?? null, p.itemId);
     case 'diagnose': return survival.diagnose(c, p.targetId);
+    case 'patient_sheet': return survival.patientSheet(c, p.targetId);
     case 'amputation_request': {
       const [t] = await db.select().from(schema.characters).where(eq(schema.characters.id, p.targetId));
       if (!t || t.locationId !== ch.locationId) throw new GameError('O paciente precisa estar aqui.');
@@ -226,7 +227,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
 }
 /** Dia 1: quem saiu do trabalho (e não está no meio de um evento) pode andar pelo mapa. */
 const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow']);
-const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'give', 'combat', 'combat_view', 'tutorial', 'block_user', 'unblock_user', 'report', 'set_frequency']);
+const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'patient_sheet', 'give', 'combat', 'combat_view', 'tutorial', 'block_user', 'unblock_user', 'report', 'set_frequency']);
 async function blockedIds(userId: number) { return (await db.select().from(schema.userBlocks).where(eq(schema.userBlocks.userId, userId))).map((b) => b.blockedUserId); }
 
 /** Mantém as salas de cada socket coerentes com a situação do personagem (local, viagem, combate, facção, rádio). */

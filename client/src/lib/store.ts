@@ -10,6 +10,8 @@ type State = {
   messages: ChatMsg[]; combat: CombatView | null; combatEnd: { outcome: string; summary: string; you: string } | null;
   toasts: Toast[]; panel: Panel; connected: boolean; blocks: number[];
   modal: null | { kind: string; data?: any };
+  /** Ao abrir a ficha médica para prestar socorro: de quem é a ficha. */
+  bodyPatient?: number | null;
   death: null | { name: string; cause: string; reanimated: boolean };
   set: (p: Partial<State>) => void;
   toast: (text: string, level?: Toast['level'], icon?: string) => void;

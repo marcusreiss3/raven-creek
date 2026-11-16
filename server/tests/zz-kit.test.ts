@@ -72,3 +72,17 @@ describe('energia desconectado', () => {
     expect(d.needs.hunger).toBe(20);
   });
 });
+
+import { patientSheet } from '../src/game/services/survival.js';
+import { makeWound } from '../src/game/rules/body.js';
+describe('prestar socorro', () => {
+  it('mostra a ficha do paciente presente; longe não', async () => {
+    const a = await makePlayer({ locationId: 'rc_main_street' }); const b = await makePlayer({ locationId: 'rc_main_street' });
+    await db.insert(schema.wounds).values({ characterId: b.character.id, ...makeWound('cut_deep', 'left_arm', 0.6, 't') });
+    const r = await patientSheet(a.character.id, b.character.id);
+    expect(r.patient.id).toBe(b.character.id);
+    expect(r.patient.wounds.length).toBe(1); expect(r.patient.wounds[0].type).toBe('cut_deep');
+    const far = await makePlayer({ locationId: 'rc_police' });
+    await expect(patientSheet(far.character.id, b.character.id)).rejects.toThrow(/aqui/);
+  });
+});

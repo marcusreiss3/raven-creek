@@ -357,6 +357,20 @@ export async function diagnose(actorId: number, targetId: number) {
   });
 }
 
+/** Ficha médica de outra pessoa presente (para prestar socorro): ferimentos e o que dá para ver dela. */
+export async function patientSheet(actorId: number, targetId: number) {
+  const { db } = await import('../../db/index.js');
+  const { buildSelfState } = await import('./characters.js');
+  const [a] = await db.select().from(schema.characters).where(eq(schema.characters.id, actorId));
+  const [t] = await db.select().from(schema.characters).where(eq(schema.characters.id, targetId));
+  if (!a || !t || !t.alive) fail('Paciente não encontrado.');
+  if (a!.id !== t!.id && (a!.locationId !== t!.locationId || t!.state === 'traveling')) fail('O paciente precisa estar aqui.');
+  const st = (await buildSelfState(targetId))?.state as any;
+  if (!st) fail('Paciente não encontrado.');
+  return { ok: true, patient: { id: st.id, name: st.name, firstName: st.firstName, amputations: st.amputations, wounds: st.wounds, conditions: st.conditions,
+    needs: { blood: st.needs.blood, health: st.needs.health, pain: st.needs.pain, vitality: st.needs.vitality, bodyTemp: st.needs.bodyTemp, unconscious: !!st.needs.unconscious } } };
+}
+
 // ───────────────────────── Amputação de emergência (abstrata) ─────────────────────────
 const AMPUTABLE = ['left_arm', 'right_arm', 'left_hand', 'right_hand', 'left_leg', 'right_leg', 'left_foot', 'right_foot'];
 const consents = new Map<string, number>(); // `${actor}:${target}:${region}` → expira em
