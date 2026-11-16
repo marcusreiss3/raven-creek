@@ -26,8 +26,8 @@ export function buildNeeds(self: NonNullable<ReturnType<typeof useGame.getState>
   const needs: (Need & { show: boolean })[] = [
     { key: 'health', show: true, icon: 'health', v: n.health, color: n.health < 40 ? '#e0554a' : '#9ab567', name: 'Saúde', tip: `Saúde geral: ${n.health}%`, critical: n.health < 30 },
     { key: 'blood', show: n.blood < 97, icon: bleeding ? 'bleeding' : 'blood', v: n.blood, color: '#c73a2e', name: 'Sangue', tip: `Sangue: ${Math.round(n.blood)}%${bleeding ? '\nVocê está sangrando: faça um curativo (Corpo).' : ''}`, critical: bleeding || n.blood < 60 },
-    { key: 'hunger', show: n.hunger > 25, icon: 'hunger', v: 100 - n.hunger, color: '#e09a3a', name: 'Fome', tip: `Fome: ${Math.round(n.hunger)}%`, critical: n.hunger > 80 },
-    { key: 'thirst', show: n.thirst > 25, icon: 'thirst', v: 100 - n.thirst, color: '#7fa9bf', name: 'Sede', tip: `Sede: ${Math.round(n.thirst)}%`, critical: n.thirst > 80 },
+    { key: 'hunger', show: true, icon: 'hunger', v: 100 - n.hunger, color: '#e09a3a', name: 'Fome', tip: `Fome: ${Math.round(n.hunger)}%`, critical: n.hunger > 80 },
+    { key: 'thirst', show: true, icon: 'thirst', v: 100 - n.thirst, color: '#7fa9bf', name: 'Sede', tip: `Sede: ${Math.round(n.thirst)}%`, critical: n.thirst > 80 },
     { key: 'energy', show: true, icon: 'energy', v: n.energy, color: '#e6c24a', name: 'Energia', tip: `Energia de exploração: ${Math.round(n.energy)}\nUsada para vasculhar e construir. Recupera descansando e dormindo.`, critical: n.energy < 14 },
     { key: 'stamina', show: true, icon: 'stamina', v: (n.stamina / Math.max(1, n.staminaMax)) * 100, color: '#9ab567', name: 'Fôlego', tip: `Estamina: ${Math.round(n.stamina)}/${n.staminaMax}` },
     { key: 'sleep', show: n.sleepiness > 40, icon: 'sleep', v: 100 - n.sleepiness, color: '#a497cf', name: 'Sono', tip: `Sono: ${Math.round(n.sleepiness)}%`, critical: n.sleepiness > 85 },
