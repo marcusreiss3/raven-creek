@@ -343,6 +343,18 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    version: 22, name: 'Itens iguais numa pilha só (junta as pilhas repetidas que já existem)',
+    run: async () => {
+      const { mergeOwnerStacks } = await import('../game/services/inventory.js');
+      const stackable = (await db.select({ id: schema.itemDefs.id }).from(schema.itemDefs).where(eq(schema.itemDefs.stackable, true))).map((d) => d.id);
+      if (!stackable.length) return;
+      const dup = await db.execute(sql`select owner_type, owner_id from items where slot is null and def_id in (${sql.join(stackable.map((s) => sql`${s}`), sql`, `)})
+        group by owner_type, owner_id, def_id having count(*) > 1`);
+      const owners = new Set((dup.rows as { owner_type: string; owner_id: string }[]).map((r) => `${r.owner_type}\u0000${r.owner_id}`));
+      for (const k of owners) { const [t, id] = k.split('\u0000'); await db.transaction((tx) => mergeOwnerStacks(tx, t, id)); }
+    },
+  },
 ];
 
 export async function applyPatches() {

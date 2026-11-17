@@ -1,5 +1,5 @@
 import { noteInfo } from './stories.js';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, ne, sql } from 'drizzle-orm';
 import { db, schema, type Tx } from '../../db/index.js';
 import { charMod } from '../content/character.js';
 import { EQUIP_SLOTS, SALVAGE } from '../content/items.js';
@@ -54,23 +54,61 @@ export function hasTool(items: ItemRow[], tool: string) {
   });
 }
 
-/** Adiciona itens a um dono, empilhando quando possível. */
+// ───────────────────────── Pilhas ─────────────────────────
+// Itens empilháveis iguais ficam numa pilha só por dono (mochila, chão, baú, porta-malas), sem limite de tamanho.
+
+/** Idade efetiva (horas) de um perecível agora, para juntar pilhas com frescores diferentes. */
+function ageNow(i: Pick<ItemRow, 'data' | 'createdAt'>, now: number) {
+  return Number(i.data?.age ?? 0) + Math.max(0, now - Number(i.data?.ageAt ?? i.createdAt?.getTime?.() ?? now)) / 3_600_000;
+}
+/** Dados da pilha juntada: perecíveis ficam com a idade média ponderada pela quantidade. */
+function mergedData(defId: string, a: Pick<ItemRow, 'data' | 'createdAt' | 'quantity'>, b: Pick<ItemRow, 'data' | 'createdAt' | 'quantity'>) {
+  const data = { ...(b.data ?? {}), ...(a.data ?? {}) };
+  if (Number(itemDef(defId)?.props?.perishHours ?? 0) > 0) {
+    const now = Date.now(); const total = Math.max(1, a.quantity + b.quantity);
+    data.age = (ageNow(a, now) * a.quantity + ageNow(b, now) * b.quantity) / total; data.ageAt = now;
+  }
+  return data;
+}
+/** Junta a pilha `row` a outra pilha igual do mesmo dono, se houver. Retorna a pilha resultante. */
+async function mergeStack(tx: Tx, row: ItemRow): Promise<ItemRow> {
+  if (!itemDef(row.defId)?.stackable || row.slot) return row;
+  const [other] = await tx.select().from(schema.items).where(and(eq(schema.items.ownerType, row.ownerType), eq(schema.items.ownerId, row.ownerId),
+    eq(schema.items.defId, row.defId), isNull(schema.items.slot), ne(schema.items.id, row.id))).orderBy(schema.items.id).limit(1).for('update');
+  if (!other) return row;
+  const [merged] = await tx.update(schema.items).set({ quantity: other.quantity + row.quantity, version: other.version + 1, data: mergedData(row.defId, other, row) })
+    .where(eq(schema.items.id, other.id)).returning();
+  await tx.delete(schema.items).where(eq(schema.items.id, row.id));
+  return merged;
+}
+/** Junta todas as pilhas repetidas de um dono (ex.: itens que caíram de um corpo no chão). */
+export async function mergeOwnerStacks(tx: Tx, ownerType: string, ownerId: string | number) {
+  const groups = new Map<string, ItemRow[]>();
+  for (const i of await itemsOf(tx, ownerType, ownerId)) if (!i.slot && itemDef(i.defId)?.stackable) (groups.get(i.defId) ?? groups.set(i.defId, []).get(i.defId)!).push(i);
+  for (const [defId, rows] of groups) {
+    if (rows.length < 2) continue;
+    let acc = rows[0];
+    for (const r of rows.slice(1)) { acc = { ...acc, quantity: acc.quantity + r.quantity, data: mergedData(defId, acc, r) }; await tx.delete(schema.items).where(eq(schema.items.id, r.id)); }
+    await tx.update(schema.items).set({ quantity: acc.quantity, data: acc.data, version: rows[0].version + 1 }).where(eq(schema.items.id, rows[0].id));
+  }
+}
+
+/** Adiciona itens a um dono. Empilháveis vão para a pilha que já existe (uma só por item). */
 export async function addItem(tx: Tx, ownerType: string, ownerId: string | number, defId: string, qty = 1, extra: { durability?: number; data?: Record<string, any> } = {}) {
   const d = itemDef(defId); if (!d) fail(`Item desconhecido: ${defId}`);
   const def = d!;
   let remaining = qty;
-  if (def.stackable) {
-    const stacks = (await itemsOf(tx, ownerType, ownerId)).filter((i) => i.defId === defId && !i.slot && i.quantity < def.maxStack);
-    for (const s of stacks) {
-      if (remaining <= 0) break;
-      const add = Math.min(remaining, def.maxStack - s.quantity);
-      await tx.update(schema.items).set({ quantity: s.quantity + add, version: s.version + 1 }).where(eq(schema.items.id, s.id));
-      remaining -= add;
+  const created: ItemRow[] = [];
+  if (def.stackable && remaining > 0) {
+    const stack = (await itemsOf(tx, ownerType, ownerId)).find((i) => i.defId === defId && !i.slot);
+    if (stack) {
+      const incoming = { data: extra.data ?? {}, createdAt: new Date(), quantity: remaining };
+      const [row] = await tx.update(schema.items).set({ quantity: stack.quantity + remaining, version: stack.version + 1, data: mergedData(defId, stack, incoming) }).where(eq(schema.items.id, stack.id)).returning();
+      created.push(row); remaining = 0;
     }
   }
-  const created: ItemRow[] = [];
   while (remaining > 0) {
-    const q = def.stackable ? Math.min(remaining, def.maxStack) : 1;
+    const q = def.stackable ? remaining : 1;
     const durability = extra.durability ?? (def.durabilityMax ? Math.round(def.durabilityMax * (0.5 + Math.random() * 0.5)) : 0);
     const [row] = await tx.insert(schema.items).values({ defId, quantity: q, durability, ownerType, ownerId: String(ownerId), data: extra.data ?? {} }).returning();
     created.push(row); remaining -= q;
@@ -105,14 +143,15 @@ export async function transferItem(tx: Tx, itemId: number, from: { type: string;
   if (amount < it!.quantity) {
     await tx.update(schema.items).set({ quantity: it!.quantity - amount, version: it!.version + 1 }).where(eq(schema.items.id, itemId));
     const [n] = await tx.insert(schema.items).values({ defId: it!.defId, quantity: amount, durability: it!.durability, ownerType: to.type, ownerId: String(to.id), data: it!.data }).returning();
-    return n;
+    // junta com a pilha que o destino já tem; quem chamou recebe a quantidade movida
+    return { ...(await mergeStack(tx, n)), quantity: amount };
   }
   // Mapa que sai das mãos de alguém perde as marcações feitas por essa pessoa.
   const data = itemDef(it!.defId)?.props?.map && Array.isArray(it!.data?.marks) && it!.data.marks.length ? { ...it!.data, marks: [] } : it!.data;
   const [moved] = await tx.update(schema.items).set({ ownerType: to.type, ownerId: String(to.id), slot: null, version: it!.version + 1, data })
     .where(and(eq(schema.items.id, itemId), eq(schema.items.version, it!.version))).returning();
   if (!moved) fail('Alguém já pegou esse item.', 'item_gone');
-  return moved;
+  return { ...(await mergeStack(tx, moved)), quantity: amount };
 }
 
 const NO_SALVAGE_CATS = ['food', 'water', 'medical', 'ammo', 'book'];

@@ -4,7 +4,7 @@ import { STRUCTURES } from '../content/structures.js';
 import { rng } from '../rules/rng.js';
 import { cfg, clock, getEventDefs, setWeather, worldState } from './config.js';
 import { logEvent, matchesConditions, pickEvent } from './events.js';
-import { addItem } from './inventory.js';
+import { addItem, mergeOwnerStacks } from './inventory.js';
 import { emitAll, emitToLocation, pushScene } from './realtime.js';
 import { radioBroadcast, systemEmote } from './chat.js';
 import { allLocations, connectionsFrom, getLocation } from './world.js';
@@ -162,6 +162,7 @@ export async function cleanupCorpses() {
   for (const c of expired) await db.transaction(async (tx) => {
     await tx.update(schema.items).set({ ownerType: 'location', ownerId: c.locationId }).where(and(eq(schema.items.ownerType, 'container'), eq(schema.items.ownerId, String(c.id))));
     await tx.delete(schema.containers).where(eq(schema.containers.id, c.id));
+    await mergeOwnerStacks(tx, 'location', c.locationId); // o que caiu do corpo junta com as pilhas que já estavam no chão
     pushScene(c.locationId);
   });
 }
