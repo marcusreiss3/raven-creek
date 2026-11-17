@@ -14,7 +14,7 @@ import { grantXp } from '../rules/progression.js';
 import { rng } from '../rules/rng.js';
 import { assertCanAct, woundsOf } from './characters.js';
 import { cfg, clock, itemDef } from './config.js';
-import { killCharacter } from './death.js';
+import { downCharacter, isDowned, reviveInTx } from './death.js';
 import { pickZombies } from './events.js';
 import { fail, gameLog, withLock } from './infra.js';
 import { addItem, armorByRegion, carryInfo, hasTool, itemsOf, type CharRow } from './inventory.js';
@@ -31,7 +31,7 @@ export async function buildPlayerUnit(tx: Tx, ch: CharRow): Promise<PlayerSetup>
   const wounds = await woundsOf(tx, ch.id);
   const mods = computeBodyMods(wounds, ch.amputations, ch.needs);
   const w = items.find((i) => i.slot === 'primary'); const wd = w && itemDef(w.defId);
-  const weapon = w && wd && (wd.props.weaponType) ? { itemId: w.id, defId: w.defId, name: wd.name, props: wd.props, durability: w.durability, ammo: Number(w.data.ammo ?? 0) } : undefined;
+  const weapon = w && wd && (wd.props.weaponType) ? { itemId: w.id, defId: w.defId, name: wd.name, props: withSuppressor(wd.props, w.data?.suppressor), durability: w.durability, ammo: Number(w.data.ammo ?? 0) } : undefined;
   const skills: Record<string, number> = {}; for (const [k, v] of Object.entries(ch.skills)) skills[k] = v.level;
   const baseAp = cfg().combat.playerAp + Math.floor(((ch.attributes.agility ?? 4) - 4) / 2) + charMod(ch.profession, ch.traits, 'moveAp', 0);
   return {
@@ -45,11 +45,24 @@ export async function buildPlayerUnit(tx: Tx, ch: CharRow): Promise<PlayerSetup>
   };
 }
 
+/** Arma com silenciador: o disparo vira um estalo (não atrai infectados nem ecoa nos vizinhos) e gasta o silenciador. */
+function withSuppressor(props: Record<string, any>, sup?: { defId: string; durability: number }) {
+  const sd = sup && itemDef(sup.defId);
+  if (!sd || sup!.durability <= 0) return props;
+  return { ...props, noise: Number(sd.props.suppressedNoise ?? 2), silent: true, suppressor: { name: sd.name, durability: sup!.durability, baseNoise: props.noise } };
+}
+
 export type StartCombatOpts = {
   characters: CharRow[]; locationId: string; arenaKey?: string; zombieCount?: number; zombieTypes?: string[]; reason: string;
   pvp?: boolean; teams?: Record<number, number>; context?: CombatState['context'];
   /** Enfrentar só este morto que levantou (além dos zumbis pedidos). */
   risenOnly?: number;
+  /** Infectados já escolhidos (ignora zombieCount e o limite de início). */
+  zombieList?: any[];
+  /** Infectados começam nos pontos do mapa, sem saber dos vivos e olhando nesta direção. */
+  calm?: { face: [number, number] };
+  /** Marca do confronto (ex.: 'heli' = destroços do capítulo 1). */
+  tag?: string;
 };
 
 /** Cria um combate. Deve ser chamado dentro de uma transação que já travou os personagens. */
@@ -58,13 +71,14 @@ export async function startCombat(tx: Tx, o: StartCombatOpts) {
   const players: PlayerSetup[] = [];
   for (const ch of o.characters) players.push(await buildPlayerUnit(tx, ch));
   const category = loc?.category ?? 'road';
-  const zombies: any[] = o.zombieCount ? pickZombies(category, Math.min(o.zombieCount, cfg().combat.maxZombiesStart), o.zombieTypes, o.locationId) : [];
+  const zombies: any[] = o.zombieList ? [...o.zombieList] : o.zombieCount ? pickZombies(category, Math.min(o.zombieCount, cfg().combat.maxZombiesStart), o.zombieTypes, o.locationId) : [];
   // Mortos que levantaram neste local entram na briga (com nome e os pertences de quando eram gente).
-  const risenUnits = !o.pvp && o.context?.type !== 'travel' && (o.zombieCount || o.risenOnly) ? await risenForCombat(tx, o.locationId, o.risenOnly) : [];
+  const risenUnits = !o.pvp && !o.zombieList && o.context?.type !== 'travel' && (o.zombieCount || o.risenOnly) ? await risenForCombat(tx, o.locationId, o.risenOnly) : [];
   zombies.unshift(...risenUnits);
   const state = createCombat(o.arenaKey ?? loc?.arenaKey ?? 'street', players, zombies, {
-    pvp: o.pvp, context: o.context ?? { type: 'location', locationId: o.locationId }, isNight: clock().phase === 'night', teams: o.teams,
+    pvp: o.pvp, context: o.context ?? { type: 'location', locationId: o.locationId }, isNight: clock().phase === 'night', teams: o.teams, calm: o.calm,
   });
+  if (o.tag) (state as any).tag = o.tag;
   const [row] = await tx.insert(schema.combats).values({
     locationId: o.context?.type === 'travel' ? `travel:${o.context.travelGroupId}` : o.locationId, reason: o.reason, state,
     phaseDeadline: new Date(Date.now() + cfg().combat.turnSeconds * 1000),
@@ -156,7 +170,11 @@ async function applyEffect(tx: Tx, s: CombatState, e: Effect, kills: Record<numb
         pushSelf(ch.id);
         return;
       }
-      await killCharacter(tx, ch, e.cause);
+      // Em vez de morrer na hora, cai: um aliado com kit de primeiros socorros ainda pode salvar.
+      const fell = await downCharacter(tx, ch, e.cause);
+      const u = s.units.find((x) => x.characterId === ch.id);
+      if (u) u.out = fell ? 'down' : 'dead';
+      if (u && fell) log(s, `${u.name} ainda respira. Um kit de primeiros socorros pode salvá-lo.`, { unit: u.id, kind: 'down' });
       return;
     }
     case 'durability': {
@@ -197,6 +215,14 @@ async function applyEffect(tx: Tx, s: CombatState, e: Effect, kills: Record<numb
         if (s.context.type === 'location' && s.context.locationId) await addItem(tx, 'location', s.context.locationId, drop.itemId, drop.qty);
         else if (e.characterId) await addItem(tx, 'character', e.characterId, drop.itemId, drop.qty);
       }
+      return;
+    }
+    case 'suppressor': {
+      // desgaste do silenciador encaixado na arma; gasto até o fim, some
+      const [it] = await tx.select().from(schema.items).where(eq(schema.items.id, e.itemId));
+      if (!it?.data?.suppressor) return;
+      if (e.durability <= 0) { const { suppressor: _s, ...rest } = it.data; await tx.update(schema.items).set({ data: rest }).where(eq(schema.items.id, it.id)); }
+      else await tx.update(schema.items).set({ data: { ...it.data, suppressor: { ...it.data.suppressor, durability: e.durability } } }).where(eq(schema.items.id, it.id));
       return;
     }
     case 'stamina': return;
@@ -261,7 +287,8 @@ async function finish(tx: Tx, row: CombatRow, s: CombatState, outcome: string, s
   const kills = s.units.filter((u) => u.side === 'zombie' && u.out === 'dead' && !u.risenId).length;
   await settleRisen(tx, s.units, s.context.type === 'location' ? s.context.locationId : undefined, s.units.find((u) => u.side === 'player' && !u.out)?.name ?? null);
   log(s, `Fim do confronto. ${summary}`, { kind: 'system' });
-  if (s.context.type === 'location' && s.context.locationId && kills) {
+  if ((s as any).tag === 'heli') { const { onHeliCombatEnd } = await import('./heli.js'); await onHeliCombatEnd(tx, kills); }
+  else if (s.context.type === 'location' && s.context.locationId && kills) {
     await tx.update(schema.locationLoot).set({ zombies: sql`greatest(0, ${schema.locationLoot.zombies} - ${kills})` }).where(eq(schema.locationLoot.locationId, s.context.locationId));
   }
   for (const u of s.units) {
@@ -332,6 +359,16 @@ export async function combatAction(characterId: number, a: CombatActionInput) {
       if (!target || target.out === 'fled' || target.out === 'dead') fail('Alvo inválido.');
       if (Math.max(Math.abs(target!.x - u.x), Math.abs(target!.y - u.y)) > 1) fail('Fique ao lado do aliado.');
       const [tch] = await tx.select().from(schema.characters).where(eq(schema.characters.id, target!.characterId!)).for('update');
+      // Caído: só um kit de primeiros socorros traz de volta (e a pessoa levanta no tabuleiro, sem PA nesta rodada).
+      if (tch && isDowned(tch.needs) && tch.id !== fresh!.id) {
+        const r = await reviveInTx(tx, fresh!, tch, a.itemId);
+        if (!r?.ok) fail(r?.error ?? 'Não foi possível reanimar.');
+        u.ap -= 2; u.actedThisTurn = true;
+        target!.out = null; target!.ap = 0; target!.endedTurn = true;
+        log(s, `${u.name} reanima ${target!.name} com um kit de primeiros socorros!`, { unit: u.id, kind: 'aid' });
+        await applyEffects(tx, s); await syncStamina(tx, s); await advance(tx, row, s);
+        return { ok: true };
+      }
       const wounds = await woundsOf(tx, tch!.id);
       const worst = [...wounds].sort((x, y) => y.bleeding - x.bleeding)[0];
       const d = itemDef((await itemsOf(tx, 'character', fresh!.id)).find((i) => i.id === a.itemId)?.defId ?? '');

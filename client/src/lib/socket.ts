@@ -48,7 +48,26 @@ export function connectSocket() {
   socket.on('world:sound', (w: { key: string; gain?: number; near?: boolean }) => { if (w.near && g().self?.combatId) return; audio.sfx(w.key, w.gain ?? 0.7); });
   socket.on('travel:arrived', (a) => g().toast(`Você chegou: ${a.name}`, 'success'));
   socket.on('character:death', (d) => { g().set({ death: d }); audio.music('death'); });
+  socket.on('character:downed', () => { g().toast('Você caiu. Só um kit de primeiros socorros nas mãos de alguém pode te salvar.', 'danger'); audio.sfx('heartbeat', 0.7); });
+  socket.on('character:revived', (r: { by: string }) => g().toast(`${r.by} te trouxe de volta. Respire.`, 'success'));
   socket.on('world:clock', (clock) => g().set({ clock }));
+  // Capítulo 1: a tripulação do helicóptero no rádio (o próprio ou o de alguém junto), linha a linha
+  socket.on('lore:radio', (m: { index: number; total: number; who: string; text: string; via: string | null; final: boolean }) => {
+    const cur = g().loreRadio;
+    const lines = [...(cur?.lines ?? []), { who: m.who, text: m.text }];
+    g().set({ loreRadio: { via: m.via, lines, total: m.total, done: m.final, open: cur ? cur.open : true }, overflight: null });
+    audio.sfx(m.index === 0 ? 'phone_notify' : 'notification', 0.45);
+  });
+  socket.on('lore:overflight', (o: { exceptCharacterIds: number[]; text: string }) => {
+    const me = g().self?.id; if (!me || o.exceptCharacterIds.includes(me)) return;
+    g().set({ overflight: o.text });
+  });
+  socket.on('lore:crash', () => { const r = g().loreRadio; if (r) g().set({ loreRadio: { ...r, open: true } }); });
+  // Capítulo da história: aparece uma vez para cada pessoa (lembrado neste navegador)
+  socket.on('world:bulletin', (b) => {
+    let seen: string | null = null; try { seen = localStorage.getItem('rc_bulletin_seen'); } catch { /* sem armazenamento */ }
+    if (b?.key && seen !== b.key) { g().set({ bulletin: b }); audio.sfx('emergency_alert', 0.6); }
+  });
   socket.on('world:weather', () => socket?.emit('scene:refresh'));
   socket.on('user:blocks', (b: number[]) => g().set({ blocks: b }));
   socket.on('amputation:request', (r) => g().set({ modal: { kind: 'amputation_consent', data: r } }));

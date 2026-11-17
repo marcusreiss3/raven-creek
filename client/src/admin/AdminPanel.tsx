@@ -4,11 +4,11 @@ import { GameIcon } from '../components/GameIcon';
 import { useIsMobile } from '../lib/mobile';
 import { api } from '../lib/api';
 import { useGame } from '../lib/store';
-import { Bar, Empty, Img, Section, pad, WEATHER } from '../components/ui';
+import { Bar, Confirm, Empty, Img, Section, pad, WEATHER } from '../components/ui';
 import { ServerControl } from './ServerControl';
 
 const TABS = [
-  ['server', 'Controle do jogo', 'pause'], ['overview', 'Visão geral', 'observe'], ['players', 'Jogadores', 'team'], ['characters', 'Personagens', 'character'], ['world', 'Mundo', 'map'], ['loot', 'Loot', 'container'], ['events', 'Eventos', 'danger'],
+  ['server', 'Controle do jogo', 'pause'], ['overview', 'Visão geral', 'observe'], ['players', 'Jogadores', 'team'], ['characters', 'Personagens', 'character'], ['world', 'Mundo', 'map'], ['lore', 'História (eventos globais)', 'radio'], ['loot', 'Loot', 'container'], ['events', 'Eventos', 'danger'],
   ['zombies', 'Zumbis', 'zombie'], ['items', 'Itens', 'inventory'], ['hordes', 'Hordas, veículos e bases', 'base'], ['config', 'Configurações', 'settings'], ['assets', 'Assets', 'cat-misc'], ['logs', 'Logs', 'journal'], ['reports', 'Denúncias', 'mural'],
 ] as const;
 
@@ -45,7 +45,7 @@ export function AdminPanel() {
       </nav>}
       <main className={`flex-1 overflow-y-auto ${mobile ? 'p-3 m-scroll-table overscroll-contain' : 'p-6'}`} key={tab}>
         {tab === 'server' && <ServerControl />}{tab === 'overview' && <Overview />}{tab === 'players' && <Players />}{tab === 'characters' && <Characters />}{tab === 'world' && <World />}
-        {tab === 'loot' && <Loot />}{tab === 'events' && <Events />}{tab === 'zombies' && <Zombies />}{tab === 'items' && <Items />}
+        {tab === 'lore' && <Lore />}{tab === 'loot' && <Loot />}{tab === 'events' && <Events />}{tab === 'zombies' && <Zombies />}{tab === 'items' && <Items />}
         {tab === 'hordes' && <HordesVehiclesBases />}{tab === 'config' && <Config />}{tab === 'assets' && <Assets />}{tab === 'logs' && <Logs />}{tab === 'reports' && <Reports />}
       </main>
     </div>
@@ -278,6 +278,75 @@ function Events() {
             {hist.data?.scheduled.filter((s: any) => !s.done).map((s: any) => <div key={s.id} className="text-xs text-amber-450 flex items-center gap-1"><GameIcon name="clock" size={13} label="agendado" />{new Date(s.runAt).toLocaleString('pt-BR')} — {s.eventId} @ {s.locationId}</div>)}</Section>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Capítulos da história: eventos globais que avançam a lore, ativados quando a administração quiser. */
+function Lore() {
+  const { data, reload } = useLoad<any>('/admin/lore');
+  const [confirm, setConfirm] = useState<any>(null); const [open, setOpen] = useState<string | null>(null);
+  const [custom, setCustom] = useState({ kicker: '', title: '', text: '', radio: true, radioAuthor: 'Rádio KRVN' });
+  if (!data) return <Empty>Carregando…</Empty>;
+  return (
+    <div className="max-w-4xl">
+      <H>História: eventos globais</H>
+      <p className="text-[14px] text-ink-300 mb-5 max-w-2xl">Cada capítulo aparece para <b>todos os jogadores</b> como um boletim em tela cheia (quem está desconectado vê ao entrar), fica no diário de todo mundo e pode mexer no mundo. Ative na ordem que fizer sentido para o RP. Dá para repetir, mas os efeitos se aplicam de novo.</p>
+      {data.last && <div className="text-[13px] text-ink-400 mb-4">Último boletim: <b className="text-ink-200">{data.last.title}</b>, {new Date(data.last.at).toLocaleString('pt-BR')}</div>}
+      <div className="space-y-3">
+        {data.chapters.map((c: any) => (
+          <div key={c.id} className={`panel-plate border border-black p-4 ${c.ran ? 'opacity-80' : ''}`}>
+            <div className="flex items-start gap-3 max-sm:flex-col">
+              <div className="font-display font-extrabold text-[30px] leading-none text-amber-450 w-8 shrink-0">{c.order}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap"><h3 className="font-display font-extrabold text-[24px] leading-none">{c.title}</h3>
+                  {c.ran ? <span className="chip text-moss-400">ativado em {new Date(c.ran.at).toLocaleString('pt-BR')}{c.ran.times > 1 ? ` (${c.ran.times}×)` : ''}</span> : <span className="chip text-ink-300">ainda não aconteceu</span>}</div>
+                <p className="text-[14px] text-ink-200 mt-2">{c.summary}</p>
+                {c.effects.length > 0 && <ul className="mt-2 text-[13px] text-ink-300 list-disc pl-5">{c.effects.map((e: string, i: number) => <li key={i}>{e}</li>)}</ul>}
+                {c.live && (
+                  <div className="mt-2 text-[13px] border-l-2 border-amber-450 pl-2 text-ink-200">
+                    Agora: <b>{({ flying: 'helicóptero no ar (rádio ao vivo)', crashed: 'caído, destroços ativos', looted: 'destroços esgotados (pode ativar de novo)' } as Record<string, string>)[c.live.phase] ?? c.live.phase}</b> em {c.live.location}
+                    {c.live.phase !== 'flying' && <> · {c.live.zombies} infectado(s) · {c.live.searchesLeft} busca(s) · carta {c.live.letterFound ? 'encontrada' : 'não encontrada'} · {c.live.heard} ouviram no rádio · {c.live.know} sabem onde caiu · {c.live.pendingTests} teste(s) pendente(s)</>}
+                  </div>
+                )}
+                {c.bulletin && <button className="text-[13px] underline text-ink-400 hover:text-ink-100 mt-2" onClick={() => setOpen(open === c.id ? null : c.id)}>{open === c.id ? 'Esconder o texto' : 'Ver o texto que os jogadores vão ler'}</button>}
+                {open === c.id && c.bulletin && (
+                  <div className="paper-note mt-2 text-[14px] leading-snug">
+                    <div className="text-[12px] uppercase tracking-wider font-bold">{c.bulletin.kicker}</div>
+                    <div className="font-bold text-[18px] mt-1">{c.bulletin.title}</div>
+                    {c.bulletin.text.split('\n').filter(Boolean).map((p: string, i: number) => <p key={i} className="mt-2">{p}</p>)}
+                    {c.radio.map((r: any, i: number) => <p key={`r${i}`} className="mt-2 italic">Rádio ({r.author}): "{r.text}"</p>)}
+                  </div>
+                )}
+              </div>
+              <button className={`btn ${c.ran ? '' : 'btn-danger'} shrink-0`} disabled={!!c.live && c.live.phase !== 'looted'} title={c.live && c.live.phase !== 'looted' ? 'Em andamento: só dá para ativar de novo depois que os destroços forem esgotados' : undefined} onClick={() => setConfirm(c)}>{c.ran ? 'Ativar de novo' : 'Ativar agora'}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Section title="Evento global escrito na hora">
+        <p className="text-[13px] text-ink-400 mb-2">Para avançar a história do seu jeito: o texto vira boletim para todos e entra no diário. Não mexe no mundo (use as outras abas para isso).</p>
+        <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
+          <input className="input" placeholder="Chamada (ex.: Rádio KRVN, Fort Ashby…)" maxLength={60} value={custom.kicker} onChange={(e) => setCustom({ ...custom, kicker: e.target.value })} />
+          <input className="input" placeholder="Título" maxLength={80} value={custom.title} onChange={(e) => setCustom({ ...custom, title: e.target.value })} />
+        </div>
+        <textarea className="input mt-2" rows={6} maxLength={3000} placeholder="O que aconteceu? (linhas em branco separam parágrafos)" value={custom.text} onChange={(e) => setCustom({ ...custom, text: e.target.value })} />
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <label className="flex items-center gap-1.5 text-[14px]"><input type="checkbox" checked={custom.radio} onChange={(e) => setCustom({ ...custom, radio: e.target.checked })} />Também transmitir no rádio (88.1) como</label>
+          <input className="input !py-1 !w-48" maxLength={40} disabled={!custom.radio} value={custom.radioAuthor} onChange={(e) => setCustom({ ...custom, radioAuthor: e.target.value })} />
+          <button className="btn btn-danger ml-auto" disabled={custom.title.trim().length < 2 || custom.text.trim().length < 5}
+            onClick={() => setConfirm({ custom: true, title: custom.title })}>Anunciar para todos</button>
+        </div>
+      </Section>
+      {confirm && (
+        <Confirm title={confirm.custom ? 'Anunciar evento global?' : `Ativar "${confirm.title}"?`} confirmLabel={confirm.custom ? 'Anunciar' : 'Ativar'} onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const c = confirm; setConfirm(null);
+            const ok = c.custom ? await run(api('/admin/lore/custom', { body: custom }), 'Anunciado para todos.') : await run(api(`/admin/lore/${c.id}/run`, { body: {} }), 'Capítulo ativado.');
+            if (ok) { if (c.custom) setCustom({ ...custom, kicker: '', title: '', text: '' }); reload(); }
+          }}
+          text={confirm.custom ? 'Todos os jogadores vão ver o boletim agora (e quem entrar depois também).' : 'Todos os jogadores vão ver o boletim agora, e os efeitos no mundo acontecem na hora. Não dá para desfazer automaticamente.'} />
+      )}
     </div>
   );
 }

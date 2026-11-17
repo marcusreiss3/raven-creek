@@ -16,6 +16,9 @@ const fullName = (c: Pick<CharRow, 'firstName' | 'lastName'>) => `${c.firstName}
 // ───────────────────────── Bilhetes ─────────────────────────
 /** Texto de um bilhete (para o inventário). */
 export function noteInfo(data: Record<string, unknown> | null | undefined) {
+  // cartas e bilhetes da história (capítulos da lore) trazem o texto no próprio item
+  const lore = data?.loreNote as { mystery: string; title: string; text: string } | undefined;
+  if (lore?.text) return { mystery: lore.mystery, title: lore.title, text: lore.text };
   const f = data?.fragmentId ? fragmentById(String(data.fragmentId)) : null;
   return f ? { mystery: f.mystery.title, title: f.fragment.title, text: f.fragment.text } : null;
 }

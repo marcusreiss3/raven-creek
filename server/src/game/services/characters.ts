@@ -119,6 +119,8 @@ export function assertCanAct(ch: CharRow, opts: { allowBusy?: boolean; allowTrav
   if (ch.state === 'combat' && !opts.allowCombat) fail('Você está em combate!', 'in_combat');
   if (ch.state === 'traveling' && !opts.allowTravel) fail('Você está viajando.', 'traveling');
   if (ch.state === 'busy' && !opts.allowBusy) fail('Você está ocupado com outra ação.', 'busy');
+  // Lendo: a atenção está toda no livro. Nada de mexer na mochila, tratar, equipar… (dá para parar de ler).
+  if (ch.state === 'busy' && (ch.busyAction as any)?.type === 'read') fail('Você está lendo. Pare de ler antes de fazer outra coisa.', 'busy');
 }
 
 export async function woundsOf(tx: Tx, characterId: number, includeHealed = false) {
@@ -200,6 +202,9 @@ export async function buildSelfState(characterId: number, tx: Tx = db) {
       }),
       knownRecipes: ch.knownRecipes,
       inventory: items.map(describeItem), carry, armor: armorByRegion(items),
+      // marcações feitas no próprio mapa (somem se o mapa sair das mãos da pessoa)
+      hasMap: items.some((i) => itemDef(i.defId)?.props.map),
+      mapMarks: ((items.find((i) => itemDef(i.defId)?.props.map)?.data?.marks ?? []) as unknown[]),
       travel: activeTravel ? {
         id: activeTravel.id, status: activeTravel.status, fromId: activeTravel.fromId, toId: activeTravel.toId, toName: getLocation(activeTravel.toId)?.name, fromName: getLocation(activeTravel.fromId)?.name,
         durationMs: activeTravel.durationMs, elapsedMs: activeTravel.elapsedMs + (activeTravel.status === 'active' ? now - activeTravel.lastProgressAt.getTime() : 0),
@@ -207,6 +212,8 @@ export async function buildSelfState(characterId: number, tx: Tx = db) {
         encounter: activeTravel.status === 'awaiting_decision' && activeTravel.encounter ? { ...activeTravel.encounter, ...(() => { const ev = getEventDefs().find((e) => e.id === activeTravel.encounter!.eventId); return { kind: ev?.kind ?? 'combat', text: ev?.text ?? '' }; })() } : null,
       } : null,
       dog: await dogView(ch.id, tx),
+      // capítulos da história com estado por pessoa (capítulo 1: queda do helicóptero)
+      lore: { heli: await (await import('./heli.js')).heliView(ch.id) },
       faction, factionInvites: invites,
       logs: logs.map((l) => ({ id: l.id, kind: l.kind, message: l.message, at: l.createdAt })),
       clock: clock(),

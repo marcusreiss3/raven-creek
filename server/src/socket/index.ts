@@ -63,6 +63,12 @@ const actionSchemas = {
   faction_info: z.object({}), base_to_faction: z.object({ baseId: id }),
   vehicle_enter: z.object({ vehicleId: id }), vehicle_exit: z.object({}), vehicle_start: z.object({ approach: z.enum(['careful', 'normal', 'risky']).optional() }),
   vehicle_stop: z.object({}), vehicle_service: z.object({ vehicleId: id, itemId: id }), vehicle_inspect: z.object({ vehicleId: id }),
+  vehicle_strip: z.object({ vehicleId: id, part: z.enum(['tire', 'battery', 'engine', 'fuel']) }),
+  trunk_open: z.object({ vehicleId: id }), trunk_store: z.object({ vehicleId: id, itemId: id, qty: z.number().int().positive().optional() }), trunk_take: z.object({ vehicleId: id, itemId: id, qty: z.number().int().positive().optional() }),
+  read_stop: z.object({}).optional(), revive: z.object({ targetId: id }),
+  heli_roll: z.object({}).optional(), heli_fight: z.object({}).optional(),
+  suppressor_attach: z.object({ weaponId: id, suppressorId: id }), suppressor_detach: z.object({ weaponId: id }),
+  map_mark_add: z.object({ x: z.number().min(-1e6).max(1e6), y: z.number().min(-1e6).max(1e6), label: z.string().max(40), color: z.string().max(10) }), map_mark_remove: z.object({ markId: z.string().max(40) }),
   block_user: z.object({ userId: id }), unblock_user: z.object({ userId: id }), blocked_list: z.object({}).optional(), report: z.object({ userId: id, messageId: id.optional(), reason: z.string().min(3).max(500) }),
   set_frequency: z.object({ frequency: z.number().min(88).max(108).nullable() }), look: z.object({ characterId: id }), tutorial: z.object({ step: z.number().int().min(0).max(50) }),
   // Dia 1 (celular)
@@ -216,6 +222,18 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'vehicle_stop': return vehicles.stopEngine(c);
     case 'vehicle_service': return vehicles.serviceVehicle(c, p.vehicleId, p.itemId);
     case 'vehicle_inspect': return vehicles.inspectVehicle(c, p.vehicleId);
+    case 'vehicle_strip': return vehicles.stripVehicle(c, p.vehicleId, p.part);
+    case 'trunk_open': return vehicles.openTrunk(c, p.vehicleId);
+    case 'trunk_store': return vehicles.trunkStore(c, p.vehicleId, p.itemId, p.qty);
+    case 'trunk_take': return vehicles.trunkTake(c, p.vehicleId, p.itemId, p.qty);
+    case 'read_stop': return survival.stopReading(c);
+    case 'heli_roll': return (await import('../game/services/heli.js')).heliRoll(c);
+    case 'heli_fight': return (await import('../game/services/heli.js')).fightHeli(c);
+    case 'revive': return survival.revive(c, p.targetId);
+    case 'suppressor_attach': return survival.attachSuppressor(c, p.weaponId, p.suppressorId);
+    case 'suppressor_detach': return survival.detachSuppressor(c, p.weaponId);
+    case 'map_mark_add': return survival.addMapMark(c, p.x, p.y, p.label, p.color);
+    case 'map_mark_remove': return survival.removeMapMark(c, p.markId);
     case 'block_user': await db.insert(schema.userBlocks).values({ userId: user.id, blockedUserId: p.userId }).onConflictDoNothing(); return { ok: true, blocked: await blockedIds(user.id) };
     case 'unblock_user': await db.delete(schema.userBlocks).where(and(eq(schema.userBlocks.userId, user.id), eq(schema.userBlocks.blockedUserId, p.userId))); return { ok: true, blocked: await blockedIds(user.id) };
     case 'blocked_list': return { ok: true, list: await blockedList(user.id) };
@@ -239,7 +257,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
 }
 /** Dia 1: quem saiu do trabalho (e não está no meio de um evento) pode andar pelo mapa. */
 const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow']);
-const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'patient_sheet', 'give', 'combat', 'combat_view', 'tutorial', 'block_user', 'unblock_user', 'report', 'set_frequency']);
+const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'patient_sheet', 'give', 'combat', 'combat_view', 'tutorial', 'revive', 'read_stop', 'block_user', 'unblock_user', 'report', 'set_frequency']);
 /** Quem este usuário bloqueou, com o nome do personagem mais recente de cada um (para a lista de desbloqueio). */
 async function blockedList(userId: number) {
   const rows = await db.select({ userId: schema.userBlocks.blockedUserId, createdAt: schema.userBlocks.createdAt }).from(schema.userBlocks).where(eq(schema.userBlocks.userId, userId));
@@ -388,6 +406,9 @@ export function createSocketServer(http: HttpServer) {
         pushScene(ch.locationId);
       }
       socket.emit('user:blocks', await blockedIds(user.id));
+      // último capítulo da história (o cliente só mostra se a pessoa ainda não viu)
+      const { lastBulletin } = await import('../game/services/chapters.js');
+      const lb = await lastBulletin(); if (lb) socket.emit('world:bulletin', lb);
     })().catch((e) => console.error('socket init', e));
   });
   return io;

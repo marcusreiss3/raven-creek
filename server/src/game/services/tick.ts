@@ -4,7 +4,7 @@ import { db, schema } from '../../db/index.js';
 import { simulate, type ConditionLike } from '../rules/simulate.js';
 import type { WoundLike } from '../rules/body.js';
 import { cfg, clock } from './config.js';
-import { killCharacter } from './death.js';
+import { downCharacter, isDowned, killCharacter } from './death.js';
 import { gameLog, withLock } from './infra.js';
 import { carryInfo, insulationOf, itemsOf } from './inventory.js';
 import { isUserOnline, notify, pushScene, pushSelf, onlineSince } from './realtime.js';
@@ -34,6 +34,14 @@ export async function tickCharacter(characterId: number, now = Date.now()) {
   await withLock(`char:${characterId}`, () => db.transaction(async (tx) => {
     const [ch] = await tx.select().from(schema.characters).where(eq(schema.characters.id, characterId)).for('update');
     if (!ch || !ch.alive) return;
+    // Caído: o corpo fica parado até alguém reanimar com um kit — ou o prazo vencer.
+    if (isDowned(ch.needs)) {
+      if (now >= Number(ch.needs.downedUntil)) {
+        await killCharacter(tx, ch, ch.needs.downedCause ?? 'unknown');
+        if (ch.combatId) { const cid = ch.combatId; after.push(() => markCombatant(ch.id, cid, 'dead')); }
+      } else await tx.update(schema.characters).set({ lastTickAt: new Date(now) }).where(eq(schema.characters.id, ch.id));
+      return;
+    }
     let dt = Math.min(now - ch.lastTickAt.getTime(), MAX_CATCHUP_MS);
     if (dt < 1000) return;
     const wounds = await tx.select().from(schema.wounds).where(and(eq(schema.wounds.characterId, ch.id), isNull(schema.wounds.healedAt)));
@@ -113,8 +121,8 @@ export async function tickCharacter(characterId: number, now = Date.now()) {
       death = null;
     }
     if (death) {
-      await killCharacter(tx, { ...ch, needs }, death);
-      if (ch.combatId) { const cid = ch.combatId; after.push(() => markCombatant(ch.id, cid, 'dead')); }
+      const fell = await downCharacter(tx, { ...ch, needs }, death);
+      if (ch.combatId) { const cid = ch.combatId; after.push(() => markCombatant(ch.id, cid, fell ? 'down' : 'dead')); }
       return;
     }
     if (fainted) {

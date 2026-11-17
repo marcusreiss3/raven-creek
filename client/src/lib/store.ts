@@ -13,6 +13,11 @@ type State = {
   /** Ao abrir a ficha médica para prestar socorro: de quem é a ficha. */
   bodyPatient?: number | null;
   death: null | { name: string; cause: string; reanimated: boolean };
+  /** Capítulo da história anunciado pela administração (boletim em tela cheia). */
+  bulletin: null | { key: string; kicker: string; title: string; text: string; at: string };
+  /** Capítulo 1: conversa da tripulação ouvida pelo rádio (ao vivo) e o helicóptero visto passando. */
+  loreRadio: null | { via: string | null; lines: { who: string; text: string }[]; total: number; done: boolean; open: boolean };
+  overflight: null | string;
   set: (p: Partial<State>) => void;
   toast: (text: string, level?: Toast['level'], icon?: string) => void;
   addMessages: (m: ChatMsg[]) => void;
@@ -32,7 +37,7 @@ type State = {
 let toastId = 1;
 export const useGame = create<State>((set, get) => ({
   user: null, characterId: null, content: null, self: null, scene: null, clock: null, messages: [], combat: null, combatEnd: null,
-  toasts: [], panel: null, connected: false, blocks: [], modal: null, death: null,
+  toasts: [], panel: null, connected: false, blocks: [], modal: null, death: null, bulletin: null, loreRadio: null, overflight: null,
   typing: {}, projectsTick: 0, hordesTick: 0, mobileTab: 'scene', chatPmTo: null, worldMap: null, route: (() => { try { return JSON.parse(localStorage.getItem('rc_route') ?? 'null'); } catch { return null; } })(),
   setTyping: (characterId, typing) => {
     const next = { ...get().typing };

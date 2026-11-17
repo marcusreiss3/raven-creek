@@ -167,6 +167,21 @@ export const defaultGameConfig = {
     enabled: true,
     corpseHours: 24,
     maxAliveCharactersPerUser: 1,
+    /** Em vez de morrer na hora, o personagem cai e pode ser reanimado com um kit de primeiros socorros dentro deste prazo (sorteado entre o mínimo e o máximo). Infecção zumbi não tem volta. */
+    downedEnabled: true,
+    downedMinSeconds: 60,
+    downedMaxSeconds: 180,
+  },
+  /** Livros: ler leva tempo e deixa o personagem ocupado (sem poder fazer mais nada). */
+  books: {
+    readMinutes: 6,
+  },
+  /** Desmontar peças de veículos: nível mínimo de Mecânica por peça. */
+  vehicleParts: {
+    tireLevel: 1,
+    batteryLevel: 1,
+    fuelLevel: 1,
+    engineLevel: 3,
   },
   /** Infectados que vivem nos locais: emboscada ao chegar, ataques a quem fica parado e retorno com o tempo. */
   zombies: {

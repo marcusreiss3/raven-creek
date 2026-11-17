@@ -11,6 +11,7 @@ import { audio } from '../lib/audio';
 import { RisenFigures, StoryHotspots } from './Stories';
 import { HordeAlert, StopHidingButton } from './Hordes';
 import { RouteBanner } from './WorldMap';
+import { HeliHotspot } from './Lore';
 import { CampfireGlow, DogBadge, NatureActions, NatureHotspots, OwnerDog, SEASON_LABEL, StrayDogs } from './Nature';
 
 const THREAT: Record<string, { text: string; tone: string }> = {
@@ -191,7 +192,8 @@ export function SceneStage({ onCharacterClick, compact, musicKey, sceneVariant }
       </div>
       <div className="absolute inset-0 pointer-events-none"><RisenFigures /><StrayDogs /></div>
       {self.needs.blood < 60 && <div className="absolute inset-0 pointer-events-none pulse-red" style={{ boxShadow: 'inset 0 0 160px 30px rgba(140,10,10,.55)' }} />}
-      {self.needs.unconscious && <div className="absolute inset-0 bg-black/85 flex items-center justify-center z-10"><div className="text-center"><GameIcon name="skull" size={40} className="mx-auto text-blood-400" /><div className="font-display font-extrabold text-4xl mt-2">Inconsciente</div><div className="text-ink-300 mt-1">Outros podem tratar seus ferimentos. Você ainda vê o chat.</div></div></div>}
+      {self.needs.downedUntil ? <DownedOverlay until={self.needs.downedUntil} />
+        : self.needs.unconscious && <div className="absolute inset-0 bg-black/85 flex items-center justify-center z-10"><div className="text-center"><GameIcon name="skull" size={40} className="mx-auto text-blood-400" /><div className="font-display font-extrabold text-4xl mt-2">Inconsciente</div><div className="text-ink-300 mt-1">Outros podem tratar seus ferimentos. Você ainda vê o chat.</div></div></div>}
       {!compact && <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-2.5 items-start z-10">
         <SceneHotspots />
       </div>}
@@ -208,10 +210,27 @@ export function SceneStage({ onCharacterClick, compact, musicKey, sceneVariant }
   );
 }
 
+/** Caído: contagem regressiva até a morte, se ninguém usar um kit de primeiros socorros. */
+function DownedOverlay({ until }: { until: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
+  const left = Math.max(0, until - now);
+  return (
+    <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-10 px-6" role="alert">
+      <div className="text-center max-w-md">
+        <GameIcon name="bleeding" size={42} className="mx-auto text-blood-400" />
+        <div className="font-display font-extrabold text-4xl mt-2 text-blood-400">Caído</div>
+        <div className="font-display font-extrabold text-5xl mt-3 tabular-nums" aria-live="off">{fmtDuration(left)}</div>
+        <p className="text-ink-200 mt-3">Você ainda respira. Alguém com um <b>kit de primeiros socorros</b> pode te salvar antes que o tempo acabe. Peça ajuda no chat.</p>
+      </div>
+    </div>
+  );
+}
+
 export function Portrait({ c, self, index, total, onClick, walking, note, dim }: { c: SceneChar; self: boolean; index: number; total: number; onClick: () => void; walking?: boolean; note?: string; dim?: boolean }) {
   const a = c.portraitAdjust ?? { scale: 1, x: 0, y: 0 };
   const width = Math.min(34, 92 / Math.max(1, total));
-  const sleeping = c.activity === 'sleeping'; const down = c.visibleCondition === 'inconsciente';
+  const sleeping = c.activity === 'sleeping'; const down = c.visibleCondition === 'inconsciente' || c.visibleCondition === 'caído';
   const typing = useGame((st) => (st.typing[c.id] ?? 0) > Date.now());
   return (
     <div role="button" tabIndex={0} aria-label={`${c.name}${self ? ' (você)' : ''}`} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
@@ -270,6 +289,7 @@ export function SceneHotspots() {
     <>
       <RouteBanner />
       {scene.combats.map((cb) => <CombatHotspot key={cb.id} id={cb.id} reason={cb.reason} />)}
+      <HeliHotspot />
       {scene.ground.length > 0 && (
         <div className="bg-[#14150fe6] border border-black shadow-[0_4px_10px_rgba(0,0,0,.6)] px-3 py-2 max-w-sm" style={{ borderLeft: '4px solid #d8c79a' }}>
           <div className="text-[13px] text-tape mb-1.5 flex items-center gap-1.5"><GameIcon name="ground" size={15} />No chão, clique para pegar</div>

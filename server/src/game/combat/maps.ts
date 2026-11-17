@@ -10,6 +10,21 @@
  * Imagens de fundo opcionais: client/public/assets/arenas/<key>.png (tile = 64px; ver docs/ASSETS.md).
  */
 export const ARENAS: Record<string, { name: string; rows: string[] }> = {
+  // Capítulo 1: destroços do helicóptero Corvo 2-1 na plantação (o = fuselagem/rotor, B = tanque de combustível vazando,
+  // c = pedaços de metal, ~ = plantação). Vivos entram pelo oeste; os infectados começam no leste, de costas.
+  heli_crash: { name: 'Destroços do helicóptero', rows: [
+    'TT.~~~~~~~~~~ZTT',
+    'E....~~~c~~~..Z.',
+    '.P...~~~~~..cZ..',
+    '.....~~ooo~....Z',
+    '.P.c...ooooB..Z.',
+    'E.....ooooo.c.Z.',
+    '.P.c...oooB...Z.',
+    '.....~~~oo~....Z',
+    '.P...~~~~~~.cZ..',
+    'E....~~c~~~~..Z.',
+    'TT.~~~~~~~~~~.TT',
+  ] },
   hospital_corridor: { name: 'Corredor de hospital', rows: [
     '################',
     '#.....#..+...Z.#',

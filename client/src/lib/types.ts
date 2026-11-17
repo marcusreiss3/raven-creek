@@ -2,10 +2,16 @@ export type Needs = {
   hunger: number; thirst: number; sleepiness: number; stamina: number; energy: number; stress: number; bodyTemp: number; blood: number;
   vitality: number; health: number; pain: number; staminaMax: number; unconscious?: boolean; painkillerUntil?: number; antibioticUntil?: number;
   nicotine?: number; alcohol?: number; nicotineDep?: number; alcoholDep?: number; drunk?: number;
+  /** Caído: morre neste instante (ms) se ninguém usar um kit de primeiros socorros. */
+  downedUntil?: number; downedCause?: string;
 };
+export type HeliView = { phase: 'flying' } | { phase: 'crashed' | 'looted'; knows: boolean; testPending: boolean; test: { roll: number; ok: boolean } | null; heardVia: string | null; locationId: string | null; locationName: string | null };
+export type MapMark ={ id: string; x: number; y: number; label: string; color: string };
 export type Item = {
   id: number; defId: string; name: string; category: string; quantity: number; weight: number; durability: number; durabilityMax: number;
-  slot: string | null; equipSlot: string | null; icon: string; rarity: string; description: string; props: Record<string, any>; data: { ammo?: number }; freshness?: number; note?: { mystery: string; title: string; text: string } | null;
+  slot: string | null; equipSlot: string | null; icon: string; rarity: string; description: string; props: Record<string, any>;
+  data: { ammo?: number; fuel?: number; charge?: number; condition?: number; suppressor?: { name: string; durability: number; durabilityMax: number } };
+  freshness?: number; note?: { mystery: string; title: string; text: string } | null;
   canDismantle?: boolean; rippable?: number;
 };
 export type Wound = {
@@ -27,6 +33,9 @@ export type SelfState = {
   amputations: string[]; wounds: Wound[]; conditions: { id: number; kind: string; name: string; stage: number; symptoms: string; progress?: number; hidden: boolean }[];
   skills: { id: string; name: string; category: string; level: number; progress: number }[]; knownRecipes: string[];
   inventory: Item[]; carry: { weight: number; capacity: number; ratio: number }; armor: Record<string, { p: number; b: number }>;
+  hasMap?: boolean; mapMarks?: MapMark[];
+  /** Capítulos da história com estado por pessoa. heli = capítulo 1 (queda do helicóptero). */
+  lore?: { heli: null | HeliView };
   travel: Travel | null; faction: { id: number; name: string; emblem: string; color: string; rank: string } | null; factionInvites: { factionId: number; name: string }[];
   logs: { id: number; kind: string; message: string; at: string }[]; clock: Clock;
   dog: Dog | null;
@@ -52,6 +61,8 @@ export type Scene = {
   pendingCorpses?: { containerId: number; name: string; risesAt: string }[];
   safes?: { mysteryId: string; name: string; digits: number; keycard?: string }[];
   muralCount?: number;
+  /** Destroços do helicóptero (capítulo 1) neste local. */
+  heli?: { zombies: number; searchesLeft: number; combatId: number | null } | null;
 };
 export type MuralPost = { id: number; authorName: string; content: string; createdAt: string; characterId: number | null };
 export type MysteryView = {

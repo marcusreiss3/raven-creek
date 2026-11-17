@@ -39,6 +39,7 @@ export async function processJobs(limit = 50) {
       else if (j.kind === 'fish_complete') await completeOutdoorJob(j.id, j.characterId!, 'fish');
       else if (j.kind === 'dog_scavenge') await (await import('./dogs.js')).completeDogScavenge(j.characterId!, Number(j.payload.dogId), String(j.payload.locationId));
       else if (j.kind === 'hide_end') await (await import('./hordes.js')).stopHiding(j.characterId!, j.id);
+      else if (j.kind === 'read_complete') await (await import('./survival.js')).completeReading(j.id, j.characterId!);
       else if (j.kind === 'project_claim') await completeClaimPower(j.id, j.characterId!, Number(j.payload.factionId));
       await db.update(schema.jobs).set({ status: 'done' }).where(eq(schema.jobs.id, j.id));
     } catch (e) {
@@ -70,6 +71,7 @@ export async function worldTick() {
       await processNeeds();
       await processFires();
       await processRisen();
+      await (await import('./heli.js')).processHeli(); // capítulo 1: queda do helicóptero (sobrevive a reinício)
       const now = Date.now();
       const slowEvery = cfg().world.eventRollEveryMinutes * 60000;
       if (now - lastSlow > slowEvery) {

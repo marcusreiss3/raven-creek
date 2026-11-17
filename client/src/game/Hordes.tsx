@@ -92,6 +92,8 @@ function LureModal({ onClose }: { onClose: () => void }) {
 /** Botão para sair do esconderijo (aparece junto da barra de "ocupado"). */
 export function StopHidingButton() {
   const type = useGame((s) => s.self?.busyAction?.type);
+  // Lendo: dá para desistir (perde o que leu até agora).
+  if (type === 'read') return <button className="btn !py-1 mt-1.5" title="Você perde o que leu até agora" onClick={() => action('read_stop')}><GameIcon name="cat-book" size={15} />Parar de ler</button>;
   if (type !== 'hide') return null;
   return <button className="btn !py-1 mt-1.5" onClick={() => action('horde_stop_hide')}><GameIcon name="hide" size={15} />Sair do esconderijo</button>;
 }

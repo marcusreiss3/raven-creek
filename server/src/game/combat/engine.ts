@@ -41,7 +41,8 @@ export type Effect =
   | { type: 'xp'; characterId: number; skill: string; amount: number; key: string }
   | { type: 'kill'; characterId?: number; zombieType: string }
   | { type: 'armor_wear'; characterId: number; region: string }
-  | { type: 'arrow'; characterId: number };
+  | { type: 'arrow'; characterId: number }
+  | { type: 'suppressor'; itemId: number; durability: number };
 export type CombatState = {
   mapKey: string; width: number; height: number; tiles: string[]; doors: Record<string, Door>;
   units: Unit[]; round: number; phase: 'players' | 'zombies' | 'ended'; log: LogEntry[]; effects: Effect[]; noise: number;
@@ -173,11 +174,17 @@ export function log(s: CombatState, text: string, extra: Partial<LogEntry> = {})
 
 // ───────────────────────── Criação ─────────────────────────
 export type PlayerSetup = Omit<Unit, 'id' | 'side' | 'x' | 'y' | 'ap' | 'out'> & { characterId: number };
-export function createCombat(mapKey: string, players: PlayerSetup[], zombies: { type: string; behavior: string; stats: ZombieStats; name: string; risenId?: number; portrait?: string | null }[], opts: { pvp?: boolean; context: CombatState['context']; isNight: boolean; teams?: Record<number, number>; ambush?: boolean }): CombatState {
+export function createCombat(mapKey: string, players: PlayerSetup[], zombies: { type: string; behavior: string; stats: ZombieStats; name: string; risenId?: number; portrait?: string | null }[], opts: { pvp?: boolean; context: CombatState['context']; isNight: boolean; teams?: Record<number, number>; ambush?: boolean; calm?: { face: [number, number] } }): CombatState {
   const m = loadMap(mapKey);
   const s: CombatState = { ...m, units: [], round: 1, phase: 'players', log: [], effects: [], noise: 0, pvp: !!opts.pvp, context: opts.context, nextZombieId: 1, isNight: opts.isNight };
   players.forEach((p, i) => addPlayer(s, p, i, opts.teams?.[p.characterId] ?? 1));
   for (const z of zombies) {
+    // Calmos: nascem nos próprios pontos do mapa (longe), sem saber dos vivos e olhando para o outro lado.
+    if (opts.calm) {
+      const u = spawnZombie(s, z.behavior === 'lurker' ? { ...z, behavior: 'shambler' } : z);
+      u.aware = false; u.lastKnown = null; u.targetId = null; u.hidden = false; u.face = [...opts.calm.face] as [number, number];
+      continue;
+    }
     const amb = opts.ambush !== false && z.behavior !== 'lurker' ? ambushSpot(s, 2, 4) : null;
     const u = spawnZombie(s, z, amb ?? undefined);
     // O confronto começa porque algo chamou a atenção deles: sabem aproximadamente onde os vivos estão.
@@ -572,7 +579,16 @@ function attack(s: CombatState, me: Unit, targetId: string, aimHead: boolean, cf
     hit *= me.accuracyMult ?? 1;
     w.ammo -= 1; if (w.itemId) s.effects.push({ type: 'ammo', itemId: w.itemId, ammo: w.ammo });
     if (p.ammoType === 'arrow' && me.characterId) s.effects.push({ type: 'arrow', characterId: me.characterId });
-    s.shotsFired = (s.shotsFired ?? 0) + 1; s.lastShotSkill = p.skill;
+    // Disparo silencioso (arco, arma com silenciador) não ecoa nos locais vizinhos.
+    if (!p.silent) { s.shotsFired = (s.shotsFired ?? 0) + 1; s.lastShotSkill = p.skill; }
+    if (p.suppressor && w.itemId) {
+      p.suppressor.durability -= 1;
+      s.effects.push({ type: 'suppressor', itemId: w.itemId, durability: p.suppressor.durability });
+      if (p.suppressor.durability <= 0) {
+        log(s, `O ${String(p.suppressor.name).toLowerCase()} de ${me.name} se desfaz — os próximos tiros vão ser altos.`, { unit: me.id, kind: 'break' });
+        p.noise = p.suppressor.baseNoise; p.silent = false; delete p.suppressor;
+      }
+    }
   } else {
     hit = cfg.combat.baseMeleeHit + 10 + (p.hitBonus ?? 0) + lvl * 4 + ((me.attrs?.agility ?? 4) - 4) * 2;
     hit *= me.meleeMult ?? 1;
@@ -667,7 +683,7 @@ export function damagePlayer(s: CombatState, attackerName: string, t: Unit, dmg:
     s.effects.push({ type: 'armor_wear', characterId: t.characterId, region });
   }
   if (type === 'gunshot' && region === 'head' && severity > 0.75) {
-    t.out = 'dead';
+    t.out = 'down'; // cai; quem não for reanimado a tempo morre (ver services/death.ts)
     log(s, `${attackerName} acerta ${t.name} na cabeça. ${t.name} cai imóvel.`, { unit: t.id, kind: 'death' });
     s.effects.push({ type: 'instant_death', characterId: t.characterId, cause: 'headshot' });
     return;

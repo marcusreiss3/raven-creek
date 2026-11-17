@@ -153,7 +153,7 @@ export function FactionPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-const LOG_KIND: Record<string, string> = {"explore": "Exploração", "combat": "Combate", "event": "Eventos", "death": "Morte", "travel": "Viagens", "trade": "Trocas", "theft": "Furtos", "base": "Base", "craft": "Fabricação", "wound": "Ferimentos", "pvp": "Duelos", "system": "Sistema", "build": "Obras", "body": "Corpo", "medical": "Tratamentos", "disease": "Doenças", "faction": "Facção"};
+const LOG_KIND: Record<string, string> = {"explore": "Exploração", "combat": "Combate", "event": "Eventos", "death": "Morte", "travel": "Viagens", "trade": "Trocas", "theft": "Furtos", "base": "Base", "craft": "Fabricação", "wound": "Ferimentos", "pvp": "Duelos", "system": "Sistema", "build": "Obras", "body": "Corpo", "medical": "Tratamentos", "disease": "Doenças", "faction": "Facção", "lore": "História do condado"};
 
 export function JournalPanel({ onClose }: { onClose: () => void }) {
   const self = useGame((s) => s.self)!;

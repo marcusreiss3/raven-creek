@@ -167,8 +167,12 @@ export async function completeOutdoorJob(jobId: number, characterId: number, kin
         const ammo = Number(weapon.data.ammo ?? 0);
         // arco: silencioso, e a flecha quase sempre volta
         const spent = bow ? (rng.chance(0.3) ? 1 : 0) : 1;
-        if (spent) await tx.update(schema.items).set({ data: { ...weapon.data, ammo: Math.max(0, ammo - 1) } }).where(eq(schema.items.id, weapon.id));
-        if (!bow) noisyAt = ch.locationId;
+        // com silenciador o tiro não chama atenção (e o silenciador gasta um pouco)
+        const sup = weapon.data?.suppressor as { defId: string; durability: number } | undefined;
+        const data: Record<string, any> = { ...weapon.data, ammo: spent ? Math.max(0, ammo - 1) : ammo };
+        if (sup && !bow) { if (sup.durability > 1) data.suppressor = { ...sup, durability: sup.durability - 1 }; else delete data.suppressor; }
+        if (spent || sup) await tx.update(schema.items).set({ data }).where(eq(schema.items.id, weapon.id));
+        if (!bow && !sup) noisyAt = ch.locationId;
       }
       if (rng.chance(chance)) {
         const big = rng.chance(rifle ? 0.55 : 0.3);

@@ -73,12 +73,14 @@ export async function buildScene(locationId: string, tx: Tx = db) {
     smokeNearby: smokeNearby(l.id), canHunt: canHunt(l.id), canFish: canFish(l.id),
     dogs: await dogsAt(l.id, chars.map((ch) => ch.id), tx),
     risen: await risenAt(l.id, tx), pendingCorpses: await pendingCorpses(l.id, tx), safes: await safesAt(l.id, tx), muralCount: await muralCount(l.id, tx),
+    heli: await (await import('./heli.js')).heliSceneInfo(l.id),
     time: { hour: c.hour, minute: c.minute, day: c.day, phase: c.phase, weather: c.weather, temperature: c.temperature + fireWarmth(l.id), season: (c as any).season, seasonDay: (c as any).seasonDay },
   };
 }
 
 export function visibleCondition(n: any) {
   if (!n) return 'normal';
+  if (n.downedUntil) return 'caído';
   if (n.unconscious) return 'inconsciente';
   if (n.blood < 55) return 'muito pálido e ensanguentado';
   if (n.blood < 80) return 'ferido';

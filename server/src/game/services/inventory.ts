@@ -107,7 +107,9 @@ export async function transferItem(tx: Tx, itemId: number, from: { type: string;
     const [n] = await tx.insert(schema.items).values({ defId: it!.defId, quantity: amount, durability: it!.durability, ownerType: to.type, ownerId: String(to.id), data: it!.data }).returning();
     return n;
   }
-  const [moved] = await tx.update(schema.items).set({ ownerType: to.type, ownerId: String(to.id), slot: null, version: it!.version + 1 })
+  // Mapa que sai das mãos de alguém perde as marcações feitas por essa pessoa.
+  const data = itemDef(it!.defId)?.props?.map && Array.isArray(it!.data?.marks) && it!.data.marks.length ? { ...it!.data, marks: [] } : it!.data;
+  const [moved] = await tx.update(schema.items).set({ ownerType: to.type, ownerId: String(to.id), slot: null, version: it!.version + 1, data })
     .where(and(eq(schema.items.id, itemId), eq(schema.items.version, it!.version))).returning();
   if (!moved) fail('Alguém já pegou esse item.', 'item_gone');
   return moved;
@@ -128,14 +130,21 @@ export function describeItem(i: ItemRow) {
   return {
     id: i.id, defId: i.defId, name: d?.name ?? i.defId, category: d?.category ?? 'misc', quantity: i.quantity, weight: d?.weight ?? 0,
     durability: i.durability, durabilityMax: d?.durabilityMax ?? 0, slot: i.slot, equipSlot: d?.equipSlot ?? null, icon: d?.icon ?? 'generic',
-    rarity: d?.rarity ?? 'common', description: d?.description ?? '', props: publicProps(d?.props ?? {}), data: { ammo: i.data?.ammo ?? undefined },
+    rarity: d?.rarity ?? 'common', description: d?.description ?? '', props: publicProps(d?.props ?? {}),
+    data: {
+      ammo: i.data?.ammo ?? undefined,
+      // peças tiradas de veículos guardam o estado (litros no galão, carga da bateria, condição do motor)
+      fuel: typeof i.data?.fuel === 'number' ? i.data.fuel : undefined, charge: typeof i.data?.battery === 'number' ? i.data.battery : undefined, condition: typeof i.data?.engine === 'number' ? i.data.engine : undefined,
+      suppressor: i.data?.suppressor ? { name: itemDef(i.data.suppressor.defId)?.name ?? 'Silenciador', durability: i.data.suppressor.durability, durabilityMax: itemDef(i.data.suppressor.defId)?.durabilityMax ?? 0 } : undefined,
+    },
     note: d?.props?.note ? noteInfo(i.data) : undefined,
     canDismantle: !!salvageOf(i.defId), rippable: Number(d?.props?.rippable ?? 0) || undefined,
     freshness: Number(d?.props?.perishHours ?? 0) > 0 ? Math.max(0, Math.round(100 * (1 - Number(i.data?.age ?? 0) / Number(d!.props.perishHours)))) : undefined,
   };
 }
 function publicProps(p: Record<string, any>) {
-  const keep = ['weaponType', 'skill', 'damage', 'range', 'apCost', 'twoHanded', 'ammoType', 'magSize', 'protection', 'ballistic', 'capacity', 'use', 'hunger', 'thirst', 'light', 'radio', 'fuel', 'insulation', 'tool', 'noise', 'fuelMinutes', 'perishHours', 'fishing', 'fire', 'smokable', 'alcohol', 'doses'];
+  const keep = ['weaponType', 'skill', 'damage', 'range', 'apCost', 'twoHanded', 'ammoType', 'magSize', 'protection', 'ballistic', 'capacity', 'use', 'hunger', 'thirst', 'light', 'radio', 'fuel', 'insulation', 'tool', 'noise', 'fuelMinutes', 'perishHours', 'fishing', 'fire', 'smokable', 'alcohol', 'doses',
+    'battery', 'tires', 'engine', 'engineBlock', 'emptyCan', 'carKey', 'suppressor', 'fits', 'map', 'skill', 'xp'];
   const o: Record<string, any> = {}; for (const k of keep) if (p[k] !== undefined) o[k] = p[k]; return o;
 }
 export { db };

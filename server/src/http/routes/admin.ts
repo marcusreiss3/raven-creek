@@ -14,6 +14,7 @@ import { addItem } from '../../game/services/inventory.js';
 import { killCharacter } from '../../game/services/death.js';
 import { eligibleEvents, randomVehicle } from '../../game/services/events.js';
 import { applyWorldEvent, spawnHorde } from '../../game/services/worldsim.js';
+import { listChapters, runChapter, runCustom } from '../../game/services/chapters.js';
 import { lootProbabilities } from '../../game/rules/loot.js';
 import { allLocations, buildScene, getLocation, loadWorld } from '../../game/services/world.js';
 import { emitAll, emitToUser, isUserOnline, notify, onlineUserIds, pushScene, pushSelf } from '../../game/services/realtime.js';
@@ -303,6 +304,20 @@ adminRouter.get('/events/history', wrap(async (_req, res) => {
 }));
 
 // ───────── Hordas, veículos, bases
+// ── História: eventos globais que avançam a lore (content/chapters.ts)
+adminRouter.get('/lore', wrap(async (_req, res) => { res.json(await listChapters()); }));
+adminRouter.post('/lore/custom', gm, wrap(async (req, res) => {
+  const b = z.object({ kicker: z.string().max(60).optional(), title: z.string().min(2).max(80), text: z.string().min(5).max(3000), radio: z.boolean().optional(), radioAuthor: z.string().max(40).optional() }).parse(req.body);
+  await runCustom(uid(req), b);
+  await adminLog(db, uid(req), 'lore.custom', 'world', 'lore', { title: b.title });
+  res.json({ ok: true });
+}));
+adminRouter.post('/lore/:id/run', gm, wrap(async (req, res) => {
+  await runChapter(String(req.params.id), uid(req));
+  await adminLog(db, uid(req), 'lore.chapter', 'world', String(req.params.id), {});
+  res.json({ ok: true });
+}));
+
 adminRouter.get('/hordes', wrap(async (_req, res) => { res.json({ hordes: (await db.select().from(schema.hordes).orderBy(desc(schema.hordes.id)).limit(50)).map((h) => ({ ...h, locationName: getLocation(h.locationId)?.name, targetName: h.targetLocationId ? getLocation(h.targetLocationId)?.name : null })) }); }));
 adminRouter.post('/hordes', gm, wrap(async (req, res) => {
   const b = z.object({ locationId: z.string().optional(), targetLocationId: z.string().optional(), size: z.number().int().min(3).max(200).optional() }).parse(req.body);

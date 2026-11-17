@@ -16,6 +16,7 @@ import { BasePanel, CharacterPanel, CraftingPanel, FactionPanel, JournalPanel, S
 import { MapPanel } from './WorldMap';
 import { Bar, Confirm, Img, Modal, Toasts } from '../components/ui';
 import { Tutorial } from './Tutorial';
+import { HeliTest, OverflightCard, RadioPanel } from './Lore';
 import { isMobile } from '../lib/mobile';
 import { audio } from '../lib/audio';
 
@@ -86,7 +87,29 @@ export function GameModals() {
           onConfirm={() => { action('amputate', modal.data); set({ modal: null }); }} text="Confirme apenas depois que o paciente consentir. O resultado depende da sua habilidade em Medicina." />
       )}
       {death && <DeathScreen />}
+      {!death && <BulletinScreen />}
+      {!death && <><OverflightCard /><RadioPanel /><HeliTest /></>}
     </>
+  );
+}
+
+/** Capítulo da história (evento global da administração): boletim em tela cheia, uma vez por pessoa. */
+function BulletinScreen() {
+  const b = useGame((s) => s.bulletin);
+  if (!b) return null;
+  const close = () => { try { localStorage.setItem('rc_bulletin_seen', b.key); } catch { /* sem armazenamento */ } useGame.getState().set({ bulletin: null }); };
+  return (
+    <div className="fixed inset-0 z-[58] bg-black/90 flex items-center justify-center p-4 anim-fade" role="dialog" aria-modal="true" aria-labelledby="bulletin-title">
+      <div className="panel-paper max-w-xl w-full max-h-full overflow-y-auto p-6 max-sm:p-4 rotate-[-0.6deg] shadow-[0_20px_60px_rgba(0,0,0,.8)]">
+        <div className="text-[13px] uppercase tracking-[.18em] text-[#7a2a20] font-bold flex items-center gap-1.5"><GameIcon name="radio" size={15} />{b.kicker}</div>
+        <h2 id="bulletin-title" className="font-display font-extrabold text-[44px] max-sm:text-[34px] leading-[.95] mt-2 text-[#1d1912] anim-stencil">{b.title}</h2>
+        <div className="mt-4 space-y-3 text-[16px] leading-relaxed text-[#2a251d]">{b.text.split('\n').filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>
+        <div className="flex items-center justify-between gap-3 mt-6 max-sm:flex-col max-sm:items-stretch">
+          <span className="text-[12.5px] text-[#4a4237]">Fica registrado no seu diário.</span>
+          <button className="btn btn-moss" autoFocus onClick={close}>Continuar</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -122,7 +145,9 @@ export function CharacterMenu({ c, onClose }: { c: SceneChar; onClose: () => voi
           <button className="btn" onClick={() => { useGame.getState().set({ panel: 'body', bodyPatient: c.id }); onClose(); }}><GameIcon name="aid" size={16} />Prestar socorro</button>
           <button className="btn" onClick={() => { useGame.getState().set({ panel: 'inventory' }); onClose(); }}><GameIcon name="inventory" size={16} />Entregar item</button>
           {self?.faction && ['leader', 'officer'].includes(self.faction.rank) && <button className="btn" onClick={() => action('faction_invite', { targetId: c.id })}><GameIcon name="faction" size={16} />Convidar à facção</button>}
-          {c.visibleCondition === 'inconsciente' && <button className="btn" onClick={() => action('search_body', { targetId: c.id }).then((r) => r.ok && setLoot(r.items))}><GameIcon name="search" size={16} />Revistar</button>}
+          {c.visibleCondition === 'caído' && <button className="btn btn-moss" disabled={!self?.inventory.some((i) => i.defId === 'first_aid_kit')} title={self?.inventory.some((i) => i.defId === 'first_aid_kit') ? 'Usa um kit de primeiros socorros' : 'Você precisa de um kit de primeiros socorros'}
+            onClick={() => action('revive', { targetId: c.id }).then((r) => { if (r.ok) onClose(); })}><GameIcon name="aid" size={16} />Reanimar (kit de primeiros socorros)</button>}
+          {(c.visibleCondition === 'inconsciente' || c.visibleCondition === 'caído') && <button className="btn" onClick={() => action('search_body', { targetId: c.id }).then((r) => r.ok && setLoot(r.items))}><GameIcon name="search" size={16} />Revistar</button>}
           <button className="btn btn-danger" onClick={() => setConfirmAtk(true)}><GameIcon name="duel" size={16} />Atacar</button>
           <button className="btn btn-ghost" onClick={() => action('block_user', { userId: c.userId }).then((r) => r.ok && useGame.getState().set({ blocks: r.blocked }))}><Ban size={15} />Bloquear</button>
           <button className="btn btn-ghost" onClick={() => { const reason = prompt('Motivo da denúncia:'); if (reason) action('report', { userId: c.userId, reason }); }}><Flag size={15} />Denunciar</button>
@@ -159,11 +184,39 @@ function VehicleModal({ v, onClose }: { v: { id: number; name: string }; onClose
   const load = () => action('vehicle_inspect', { vehicleId: v.id }, { silent: true }).then((r) => r.ok && setInfo(r.vehicle));
   useEffect(() => { load(); }, [v.id, live?.running, live?.driverId]);
   const driver = live?.driverId === self?.id;
-  const parts = self?.inventory.filter((i) => i.category === 'vehicle') ?? [];
+  // só o que de fato entra no veículo (galão vazio, por exemplo, serve para tirar combustível — não para "usar")
+  const parts = self?.inventory.filter((i) => i.category === 'vehicle' && (i.props.fuel || i.props.battery || i.props.tires || i.props.engine || i.props.engineBlock || i.props.carKey)) ?? [];
+  const [tab, setTab] = useState<'controls' | 'trunk' | 'parts'>('controls');
   const start = async (approach?: string) => { const r = await action('vehicle_start', approach ? { approach } : {}); if (r.ok) { setMini(r.minigame); if (r.started) { useGame.getState().toast('Motor ligado!', 'success'); audio.sfx('engine_start', 0.8); } else if (!r.minigame || r.minigame.lastSuccess === false) audio.sfx('engine_fail', 0.7); load(); } };
+  const partLabel = (p: Item) => `${p.name}${p.data.fuel !== undefined ? ` (${p.data.fuel} L)` : p.data.charge !== undefined ? ` (carga ${p.data.charge}%)` : p.data.condition !== undefined ? ` (estado ${p.data.condition}%)` : ''}`;
   return (
-    <Modal title={v.name} onClose={onClose} width={560}>
-      {info && <div className="grid grid-cols-3 gap-2 text-sm mb-4">{[['Combustível', `${info.fuel}${typeof info.fuel === 'number' ? ` / ${info.fuelMax} L` : ''}`], ['Motor', info.engine], ['Pneus', info.tires], ['Bateria', info.battery], ['Lataria', info.body], ['Lugares', info.seats]].map(([k, val]) => <div key={k} className="bg-[#101109] border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,.6)] px-2.5 py-1.5"><div className="label">{k}</div>{String(val)}</div>)}</div>}
+    <Modal title={v.name} onClose={onClose} width={640}>
+      {info && <div className="grid grid-cols-3 gap-2 text-sm mb-3">{[['Combustível', `${info.fuel}${typeof info.fuel === 'number' ? ` / ${info.fuelMax} L` : ''}`], ['Motor', info.engine], ['Pneus', info.tires], ['Bateria', info.battery], ['Lataria', info.body], ['Porta-malas', info.trunk ? `${info.trunk.used} / ${info.trunk.capacity} kg` : '?']].map(([k, val]) => <div key={k} className="bg-[#101109] border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,.6)] px-2.5 py-1.5"><div className="label">{k}</div>{String(val)}</div>)}</div>}
+      <div className="flex gap-1 mb-3" role="tablist" aria-label="Seções do veículo">
+        {([['controls', 'Dirigir e consertar'], ['trunk', 'Porta-malas'], ['parts', 'Tirar peças']] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={`chip !py-1 ${tab === k ? 'text-amber-450 !bg-amber-450/10' : 'text-ink-300 hover:text-ink-100'}`} onClick={() => setTab(k)}>{label}</button>
+        ))}
+      </div>
+      {tab === 'trunk' && <TrunkSection vehicleId={v.id} onChange={load} />}
+      {tab === 'parts' && info && (
+        <div>
+          <p className="text-[13.5px] text-ink-300 mb-2">Tire peças deste veículo para colocar em outro. Precisa saber Mecânica (seu nível: <b>{info.mechanics}</b>) e do motor desligado.</p>
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-1.5">
+            {([
+              ['tire', 'Tirar um pneu', 'Mecânica 1 · chave inglesa', info.strip?.tire],
+              ['battery', 'Tirar a bateria', 'Mecânica 1 · chave inglesa ou de fenda', info.strip?.battery],
+              ['fuel', 'Tirar combustível (até 10 L)', 'Mecânica 1 · galão vazio', info.strip?.fuel],
+              ['engine', 'Tirar o motor', 'Mecânica 3 · chave inglesa e de fenda · 20 kg', info.strip?.engine],
+            ] as const).map(([part, label, req, ok]) => (
+              <button key={part} className="btn !justify-start !items-start flex-col !gap-0 text-left" disabled={!ok || !!live?.running} onClick={() => action('vehicle_strip', { vehicleId: v.id, part }).then(load)}>
+                <span>{label}</span><span className="text-[12px] text-ink-400 font-normal">{ok ? req : 'nada para tirar'}</span>
+              </button>
+            ))}
+          </div>
+          {live?.running && <p className="text-[12.5px] text-blood-400 mt-2">Desligue o motor primeiro.</p>}
+        </div>
+      )}
+      {tab === 'controls' && <>
       <div className="text-[13.5px] text-ink-300 mb-3">{info?.hasKey ? 'A chave está no contato.' : 'Sem chave. Dar partida exige improviso, e faz barulho.'}</div>
       <div className="flex flex-wrap gap-1.5">
         {!driver ? <button className="btn btn-moss" onClick={() => action('vehicle_enter', { vehicleId: v.id })}><GameIcon name="vehicle" size={16} />Assumir o volante</button> : <>
@@ -171,7 +224,7 @@ function VehicleModal({ v, onClose }: { v: { id: number; name: string }; onClose
           {live?.running && <button className="btn" onClick={() => action('vehicle_stop')}>Desligar</button>}
           <button className="btn" onClick={() => action('vehicle_exit')}>Sair do veículo</button>
         </>}
-        {parts.map((p) => <button key={p.id} className="btn !py-1" onClick={() => action('vehicle_service', { vehicleId: v.id, itemId: p.id }).then(load)}>Usar {p.name}</button>)}
+        {parts.map((p) => <button key={p.id} className="btn !py-1" onClick={() => action('vehicle_service', { vehicleId: v.id, itemId: p.id }).then(load)}>{p.props.engineBlock ? 'Instalar' : 'Usar'} {partLabel(p)}</button>)}
       </div>
       {mini && (
         <div className="mt-4 border border-amber-450/40 p-3">
@@ -187,7 +240,29 @@ function VehicleModal({ v, onClose }: { v: { id: number; name: string }; onClose
         </div>
       )}
       {driver && live?.running && <div className="text-[13.5px] text-moss-400 mt-3">Escolha uma saída e clique em "Ir de veículo". Quem estiver seguindo você embarca como passageiro.</div>}
+      </>}
     </Modal>
+  );
+}
+
+/** Porta-malas: o que está guardado (clique para pegar) e a mochila (clique para guardar), com limite de peso. */
+function TrunkSection({ vehicleId, onChange }: { vehicleId: number; onChange: () => void }) {
+  const self = useGame((s) => s.self);
+  const [data, setData] = useState<{ trunk: { used: number; capacity: number }; items: Item[] } | null>(null);
+  const load = () => action('trunk_open', { vehicleId }, { silent: true }).then((r) => { if (r.ok) setData({ trunk: r.trunk, items: r.items }); });
+  useEffect(() => { load(); }, [vehicleId]);
+  const after = () => { load(); onChange(); };
+  if (!data) return <div className="text-[14px] text-ink-400">Abrindo o porta-malas…</div>;
+  const ratio = data.trunk.used / Math.max(1, data.trunk.capacity);
+  return (
+    <div>
+      <div className="flex justify-between text-[13.5px] mb-1"><span className="text-ink-300">Carga no porta-malas</span><span className="tabular-nums">{data.trunk.used} de {data.trunk.capacity} kg</span></div>
+      <Bar value={data.trunk.used} max={data.trunk.capacity} color={ratio > 0.9 ? '#e0554a' : ratio > 0.7 ? '#f0a73a' : '#9ab567'} />
+      <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4 mt-3">
+        <div><h3 className="text-[13.5px] text-tape mb-1.5">No porta-malas, clique para pegar</h3><div className="space-y-1 max-h-64 overflow-y-auto">{data.items.map((i) => <ItemRow key={i.id} i={i} onClick={() => action('trunk_take', { vehicleId, itemId: i.id }).then(after)} hint="pegar" />)}{!data.items.length && <div className="text-[14px] text-ink-400 py-2">Vazio.</div>}</div></div>
+        <div><h3 className="text-[13.5px] text-tape mb-1.5">Sua mochila, clique para guardar</h3><div className="space-y-1 max-h-64 overflow-y-auto">{self?.inventory.filter((i) => !i.slot).map((i) => <ItemRow key={i.id} i={i} onClick={() => action('trunk_store', { vehicleId, itemId: i.id }).then(after)} hint={`guardar · ${(i.weight * i.quantity).toFixed(1)} kg`} />)}</div></div>
+      </div>
+    </div>
   );
 }
 
@@ -204,6 +279,7 @@ function AidModal({ targetId, onClose }: { targetId: string; onClose: () => void
   const meds = self?.inventory.filter((i) => i.category === 'medical') ?? [];
   return (
     <Modal title="Socorrer aliado (2 PA)" onClose={onClose}>
+      <p className="text-[13px] text-ink-300 mb-2">Aliado caído só volta com um <b>kit de primeiros socorros</b>.</p>
       <div className="flex flex-wrap gap-1.5">{meds.map((m) => <button key={m.id} className="btn" onClick={() => { action('combat', { action: { type: 'use_item', itemId: m.id, targetId } }); onClose(); }}>{m.name} ×{m.quantity}</button>)}</div>
     </Modal>
   );

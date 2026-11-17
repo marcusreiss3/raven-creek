@@ -12,6 +12,7 @@ import { fail, gameLog } from './infra.js';
 import { addItem, carryInfo, consumeItem, hasTool as hasToolIn, itemsOf, salvageOf, transferItem, type CharRow, type ItemRow } from './inventory.js';
 import { isUserOnline, notify, pushScene, pushSelf } from './realtime.js';
 import { systemEmote } from './chat.js';
+import { isDowned, reviveInTx } from './death.js';
 
 const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 
@@ -228,15 +229,7 @@ export async function useItem(characterId: number, itemId: number) {
       smoke(n, cfg());
       msgs.push(`${fullName(ch)} acende um cigarro e traga fundo.`);
     } else if (d.category === 'book') {
-      const key = `read:${d.id}`;
-      if (ch.knownRecipes.includes(key)) fail('Você já leu este material. Passe-o adiante.');
-      if (clock().isDark && !(await itemsOf(tx, 'character', ch.id)).some((i) => itemDef(i.defId)?.props.light)) fail('Está escuro demais para ler sem uma lanterna.');
-      const mult = charMod(ch.profession, ch.traits, 'bookXp');
-      await giveXp(tx, ch, p.skill, p.xp * mult, key, p.maxLevel);
-      const recipes = [...new Set([...ch.knownRecipes, key, ...(p.recipes ?? [])])];
-      await tx.update(schema.characters).set({ knownRecipes: recipes }).where(eq(schema.characters.id, ch.id));
-      msgs.push(`${fullName(ch)} folheia ${d.name.toLowerCase()} com atenção.`);
-      notify(ch.userId, `Você estudou ${d.name}. Novos conhecimentos: ${(p.recipes ?? []).length}.`, 'success');
+      return startReading(tx, ch, it);
     } else if (d.category === 'medical') {
       fail('Use itens médicos pelo painel do corpo, escolhendo o ferimento.');
     } else if (d.category === 'vehicle') {
@@ -244,6 +237,122 @@ export async function useItem(characterId: number, itemId: number) {
     } else fail('Não há uso direto para este item.');
     await tx.update(schema.characters).set({ needs: n }).where(eq(schema.characters.id, ch.id));
     if (ch.state !== 'traveling') for (const m of msgs) await systemEmote(ch.locationId, m);
+    pushSelf(ch.id);
+    return { ok: true };
+  });
+}
+
+// ───────────────────────── Leitura ─────────────────────────
+/** Ler um livro leva vários minutos: o personagem fica ocupado (sem poder fazer mais nada) até terminar ou desistir. */
+async function startReading(tx: Tx, ch: CharRow, it: ItemRow) {
+  const d = itemDef(it.defId)!;
+  if (ch.state === 'traveling') fail('Não dá para estudar andando. Leia quando estiver parado num lugar.');
+  const key = `read:${d.id}`;
+  if (ch.knownRecipes.includes(key)) fail('Você já leu este material. Passe-o adiante.');
+  if (clock().isDark && !(await itemsOf(tx, 'character', ch.id)).some((i) => itemDef(i.defId)?.props.light)) fail('Está escuro demais para ler sem uma lanterna.');
+  // Intelecto alto lê um pouco mais rápido, mas nunca menos de 5 minutos.
+  const base = Number(cfg().books?.readMinutes ?? 6);
+  const minutes = Math.max(5, base * (1 - ((ch.attributes.intellect ?? 4) - 4) * 0.05));
+  const runAt = new Date(Date.now() + minutes * 60_000);
+  const [job] = await tx.insert(schema.jobs).values({ kind: 'read_complete', characterId: ch.id, runAt, payload: { itemId: it.id, defId: d.id } }).returning();
+  await tx.update(schema.characters).set({ state: 'busy', activity: 'idle', busyUntil: runAt, busyAction: { type: 'read', jobId: job.id, label: `Lendo ${d.name.toLowerCase()}`, startedAt: Date.now(), itemId: it.id } }).where(eq(schema.characters.id, ch.id));
+  await systemEmote(ch.locationId, `${fullName(ch)} senta e abre ${d.name.toLowerCase()}, concentrado.`);
+  pushSelf(ch.id); pushScene(ch.locationId);
+  return { ok: true, minutes: Math.round(minutes) };
+}
+
+/** Fim da leitura (agendador). Idempotente pelo jobId; só conta se o livro ainda estiver com a pessoa. */
+export async function completeReading(jobId: number, characterId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    if (ch.state !== 'busy' || (ch.busyAction as any)?.jobId !== jobId) return { skipped: true };
+    await tx.update(schema.characters).set({ state: 'idle', busyUntil: null, busyAction: null }).where(eq(schema.characters.id, ch.id));
+    ch.state = 'idle';
+    const itemId = Number((ch.busyAction as any)?.itemId);
+    const [it] = await tx.select().from(schema.items).where(and(eq(schema.items.id, itemId), eq(schema.items.ownerType, 'character'), eq(schema.items.ownerId, String(ch.id))));
+    const d = it ? itemDef(it.defId) : null;
+    if (!it || !d || d.category !== 'book') { notify(ch.userId, 'O livro não está mais com você. A leitura ficou pela metade.', 'warn'); pushSelf(ch.id); pushScene(ch.locationId); return { ok: false }; }
+    const p = d.props; const key = `read:${d.id}`;
+    if (!ch.knownRecipes.includes(key)) {
+      const mult = charMod(ch.profession, ch.traits, 'bookXp');
+      await giveXp(tx, ch, p.skill, p.xp * mult, key, p.maxLevel);
+      const recipes = [...new Set([...ch.knownRecipes, key, ...(p.recipes ?? [])])];
+      await tx.update(schema.characters).set({ knownRecipes: recipes }).where(eq(schema.characters.id, ch.id));
+      notify(ch.userId, `Você terminou de estudar ${d.name}. Novos conhecimentos: ${(p.recipes ?? []).length}.`, 'success');
+    }
+    await systemEmote(ch.locationId, `${fullName(ch)} fecha ${d.name.toLowerCase()}, pensativo.`);
+    pushSelf(ch.id); pushScene(ch.locationId);
+    return { ok: true };
+  });
+}
+
+/** Desistir da leitura: perde o que leu até agora. */
+export async function stopReading(characterId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    if (ch.state !== 'busy' || (ch.busyAction as any)?.type !== 'read') fail('Você não está lendo.');
+    await tx.update(schema.characters).set({ state: 'idle', busyUntil: null, busyAction: null }).where(eq(schema.characters.id, ch.id));
+    await systemEmote(ch.locationId, `${fullName(ch)} fecha o livro antes de terminar.`);
+    pushSelf(ch.id); pushScene(ch.locationId);
+    return { ok: true };
+  });
+}
+
+// ───────────────────────── Silenciadores ─────────────────────────
+/** Encaixa um silenciador compatível na arma (o silenciador sai do inventário e passa a fazer parte da arma). */
+export async function attachSuppressor(characterId: number, weaponId: number, suppressorId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
+    const w = await ownedItem(tx, ch, weaponId); const wd = itemDef(w.defId)!;
+    const s = await ownedItem(tx, ch, suppressorId); const sd = itemDef(s.defId)!;
+    if (!sd.props.suppressor) fail('Isso não é um silenciador.');
+    if (!(sd.props.fits ?? []).includes(wd.id)) fail(`${sd.name} não encaixa em ${wd.name.toLowerCase()}.`);
+    if (w.data?.suppressor) fail('A arma já tem um silenciador. Tire o atual primeiro.');
+    await consumeItem(tx, s.id, 'character', ch.id, 1);
+    await tx.update(schema.items).set({ data: { ...w.data, suppressor: { defId: sd.id, durability: s.durability || sd.durabilityMax } } }).where(eq(schema.items.id, w.id));
+    notify(ch.userId, `Você rosqueia ${sd.name.toLowerCase()} em ${wd.name.toLowerCase()}. Os disparos não vão mais atrair infectados.`, 'success');
+    pushSelf(ch.id);
+    return { ok: true };
+  });
+}
+export async function detachSuppressor(characterId: number, weaponId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true, allowTravel: true });
+    const w = await ownedItem(tx, ch, weaponId);
+    const sup = w.data?.suppressor as { defId: string; durability: number } | undefined;
+    if (!sup) fail('Essa arma não tem silenciador.');
+    const { suppressor: _s, ...rest } = w.data;
+    await tx.update(schema.items).set({ data: rest }).where(eq(schema.items.id, w.id));
+    await addItem(tx, 'character', ch.id, sup!.defId, 1, { durability: sup!.durability });
+    pushSelf(ch.id);
+    return { ok: true };
+  });
+}
+
+// ───────────────────────── Marcações no mapa ─────────────────────────
+export type MapMark = { id: string; x: number; y: number; label: string; color: string };
+const MARK_COLORS = ['red', 'blue', 'green', 'black'];
+/** O mapa (item) da pessoa: as marcações ficam desenhadas nele. Sem mapa, sem marcações. */
+async function ownMap(tx: Tx, ch: CharRow) {
+  const m = (await itemsOf(tx, 'character', ch.id)).find((i) => itemDef(i.defId)?.props.map);
+  if (!m) fail('Você precisa de um mapa do condado para fazer marcações.');
+  return m!;
+}
+export async function addMapMark(characterId: number, x: number, y: number, label: string, color: string) {
+  return withCharacter(characterId, async (tx, ch) => {
+    if (!ch.alive) fail('Seu personagem está morto.');
+    const m = await ownMap(tx, ch);
+    const marks: MapMark[] = Array.isArray(m.data?.marks) ? m.data.marks : [];
+    if (marks.length >= 40) fail('O mapa já está cheio de rabiscos (máximo de 40 marcações). Apague alguma.');
+    const mark: MapMark = { id: `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`, x: Math.round(x), y: Math.round(y), label: label.trim().slice(0, 40) || 'Marcação', color: MARK_COLORS.includes(color) ? color : 'red' };
+    await tx.update(schema.items).set({ data: { ...m.data, marks: [...marks, mark] } }).where(eq(schema.items.id, m.id));
+    pushSelf(ch.id);
+    return { ok: true, mark };
+  });
+}
+export async function removeMapMark(characterId: number, markId: string) {
+  return withCharacter(characterId, async (tx, ch) => {
+    const m = await ownMap(tx, ch);
+    const marks: MapMark[] = Array.isArray(m.data?.marks) ? m.data.marks : [];
+    await tx.update(schema.items).set({ data: { ...m.data, marks: marks.filter((k) => k.id !== markId) } }).where(eq(schema.items.id, m.id));
     pushSelf(ch.id);
     return { ok: true };
   });
@@ -274,6 +383,15 @@ export async function treat(actorId: number, targetId: number, woundId: number |
 export async function treatInTx(tx: Tx, actor: CharRow, target: CharRow, woundId: number | null, itemId: number) {
   const it = await ownedItem(tx, actor, itemId); const d = itemDef(it.defId)!; const use = d.props.use as string;
   if (!use) fail('Esse item não serve para tratamento.');
+  // Quem caiu só volta com um kit de primeiros socorros (o kit reanima em vez de tratar um ferimento).
+  if (isDowned(target.needs)) {
+    if (actor.id === target.id) fail('Você está caído.');
+    if (use !== 'medkit') fail('Só um kit de primeiros socorros salva quem caiu.');
+    const r = await reviveInTx(tx, actor, target, it.id);
+    if (!r?.ok) fail(r?.error ?? 'Não foi possível reanimar.');
+    await giveXp(tx, actor, 'medicine', 10, `revive_${target.id}`);
+    return { ok: true, text: r!.text, revived: true };
+  }
   const q = treatQuality(actor); const n = { ...target.needs }; const self = actor.id === target.id;
   const wounds = await woundsOf(tx, target.id);
   // Sem ferimento escolhido (ex.: tratando outra pessoa), escolhe o mais adequado ao item.
@@ -351,6 +469,21 @@ export async function treatInTx(tx: Tx, actor: CharRow, target: CharRow, woundId
   if (!self) await gameLog(tx, target.id, 'medical', text);
   pushSelf(actor.id); if (!self) pushSelf(target.id);
   return { ok: true, text };
+}
+
+/** Reanimar quem caiu, usando o kit de primeiros socorros do socorrista (botão no retrato da pessoa). */
+export async function revive(actorId: number, targetId: number) {
+  return withTwoCharacters(actorId, targetId, async (tx, actor, target) => {
+    assertCanAct(actor, { allowBusy: true, allowTravel: true, allowCombat: false });
+    if (actor.id === target.id) fail('Você não consegue se reanimar sozinho.');
+    if (!target.alive) fail('Tarde demais.');
+    if (!isDowned(target.needs)) fail('Essa pessoa não está caída.');
+    if (!(await sameSpot(tx, actor, target))) fail('A pessoa precisa estar aqui.');
+    const r = await reviveInTx(tx, actor, target);
+    if (!r?.ok) fail(r?.error ?? 'Não foi possível reanimar.');
+    await giveXp(tx, actor, 'medicine', 10, `revive_${target.id}`);
+    return { ok: true, text: r!.text };
+  });
 }
 
 /** Diagnóstico: médicos (ou Medicina ≥ 4) conseguem identificar a infecção zumbi oculta. */

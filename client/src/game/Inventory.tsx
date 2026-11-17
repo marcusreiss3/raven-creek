@@ -111,8 +111,11 @@ function ItemDetail({ item: i, sheet }: { item: Item; sheet?: boolean }) {
   const traveling = self?.state === 'traveling' && !!self.travel;
   const others = (traveling ? self!.travel!.companions ?? [] : scene?.characters ?? []).filter((c) => c.id !== self?.id);
   const p = i.props;
-  const consumable = ['food', 'water', 'book'].includes(i.category) || p.smokable;
-  const verb = p.smokable ? 'Fumar' : p.doses ? 'Tomar uma dose' : i.category === 'food' ? 'Comer' : i.category === 'water' ? 'Beber' : i.category === 'book' ? 'Ler' : 'Usar';
+  const alreadyRead = i.category === 'book' && !!self?.knownRecipes.includes(`read:${i.defId}`);
+  const consumable = (['food', 'water', 'book'].includes(i.category) || p.smokable) && !alreadyRead;
+  const verb = p.smokable ? 'Fumar' : p.doses ? 'Tomar uma dose' : i.category === 'food' ? 'Comer' : i.category === 'water' ? 'Beber' : i.category === 'book' ? 'Ler (5 min ou mais)' : 'Usar';
+  // silenciador: armas da mochila em que ele encaixa (e que ainda não têm um)
+  const fitsInto = p.suppressor ? (self?.inventory ?? []).filter((w) => (p.fits ?? []).includes(w.defId) && !w.data.suppressor) : [];
   return (
     <div className={sheet ? '' : 'mt-5 panel-plate p-4 anim-fade'}>
       <div className="flex justify-between items-start gap-4 max-sm:flex-wrap max-sm:gap-3">
@@ -128,16 +131,26 @@ function ItemDetail({ item: i, sheet }: { item: Item; sheet?: boolean }) {
         {p.twoHanded && <div className="text-amber-450">Duas mãos</div>}{p.ammoType && <div>Munição: {p.ammoType.replace('ammo_', '')} ({i.data.ammo ?? 0}/{p.magSize})</div>}
         {p.hunger && <div>Fome {p.hunger}</div>}{p.thirst && <div>Sede {p.thirst}</div>}{p.capacity && <div>+{p.capacity} kg de carga</div>}
         {p.protection && Object.keys(p.protection).length > 0 && <div className="col-span-3 max-sm:col-span-2">Proteção: {Object.entries(p.protection as Record<string, number>).map(([r, v]) => `${r} ${Math.round(v * 100)}%`).join(', ')}</div>}
-        {p.use && <div className="col-span-3 max-sm:col-span-2 text-moss-400">Uso médico: aplique pelo painel do Corpo, escolhendo o ferimento.</div>}
+        {p.use && <div className="col-span-3 max-sm:col-span-2 text-moss-400">Uso médico: aplique pelo painel do Corpo, escolhendo o ferimento.{p.use === 'medkit' ? ' É também o único jeito de reanimar alguém caído.' : ''}</div>}
+        {i.data.fuel !== undefined && <div>Combustível: <b>{i.data.fuel} L</b></div>}
+        {i.data.charge !== undefined && <div>Carga: <b>{i.data.charge}%</b></div>}
+        {i.data.condition !== undefined && <div>Estado do motor: <b>{i.data.condition}%</b></div>}
+        {i.data.suppressor && <div className="col-span-3 max-sm:col-span-2 text-moss-400">Com {i.data.suppressor.name.toLowerCase()} ({i.data.suppressor.durability}/{i.data.suppressor.durabilityMax} disparos): tiros não atraem infectados.</div>}
+        {p.suppressor && <div className="col-span-3 max-sm:col-span-2 text-ink-200">Silenciador: os tiros não atraem infectados nem ecoam nos lugares vizinhos. Aguenta cerca de {i.durability} disparos.</div>}
+        {alreadyRead && <div className="col-span-3 max-sm:col-span-2 text-ink-400">Você já leu este material. Passe-o adiante.</div>}
+        {i.category === 'book' && !alreadyRead && <div className="col-span-3 max-sm:col-span-2 text-ink-400">Ler toma alguns minutos e você não pode fazer mais nada enquanto isso (pode desistir, mas perde o progresso).</div>}
       </div>
       {i.note && <NoteText note={i.note} />}
       <div className="flex flex-wrap gap-1.5 mt-3 max-sm:[&>button]:flex-1">
-        {consumable && <button className="btn btn-moss" onClick={() => { action('use', { itemId: i.id }); audio.sfx(i.category === 'water' ? 'drink' : 'eat'); }}>{verb}</button>}
+        {consumable && <button className="btn btn-moss" onClick={() => { action('use', { itemId: i.id }); if (i.category === 'food' || i.category === 'water') audio.sfx(i.category === 'water' ? 'drink' : 'eat'); }}>{verb}</button>}
         {i.equipSlot && !i.slot && <button className="btn" onClick={() => action('equip', { itemId: i.id })}>Equipar</button>}
         {(p.weaponType || i.category === 'tool') && !i.slot && !i.equipSlot && null}
         {i.slot && <button className="btn" onClick={() => action('unequip', { itemId: i.id })}>Desequipar</button>}
         {p.ammoType && i.slot === 'primary' && <button className="btn" onClick={() => action('reload')}>Recarregar</button>}
         {p.ammoType && (i.data.ammo ?? 0) > 0 && <button className="btn" onClick={() => action('unload', { itemId: i.id })}>Descarregar</button>}
+        {i.data.suppressor && <button className="btn" onClick={() => action('suppressor_detach', { weaponId: i.id })}>Tirar silenciador</button>}
+        {fitsInto.map((w) => <button key={w.id} className="btn btn-moss" onClick={() => action('suppressor_attach', { weaponId: w.id, suppressorId: i.id })}>Encaixar em {w.name}</button>)}
+        {p.suppressor && !fitsInto.length && <span className="text-[12.5px] text-ink-400 self-center">Nenhuma arma compatível na mochila.</span>}
         {i.durabilityMax > 0 && !p.doses && i.durability < i.durabilityMax && <button className="btn" title="Armas brancas: sucata + pregos + martelo · armas de fogo: sucata + componentes + chave de fenda · roupas: 2 trapos" onClick={() => action('repair_item', { itemId: i.id })}>Reparar</button>}
         {i.rippable && !i.slot && <button className="btn" title="Vira trapos para curativos e reparos (mais trapos se a peça estiver inteira)" onClick={() => action('tear', { itemId: i.id })}>Rasgar em trapos</button>}
         {i.canDismantle && !i.rippable && <button className="btn" title="Destrói o item e devolve parte dos materiais" onClick={() => action('dismantle', { itemId: i.id })}>Desmontar</button>}

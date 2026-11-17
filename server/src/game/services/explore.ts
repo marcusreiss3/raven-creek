@@ -19,6 +19,7 @@ import { isPowered } from './projects.js';
 import { fireLit } from './nature.js';
 import { dogFindBonus, maybeSpawnStray } from './dogs.js';
 import { maybeFindNote, searchHiddenStash } from './stories.js';
+import { assertHeliSearchable, heliSearch } from './heli.js';
 
 const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 
@@ -26,6 +27,7 @@ const fullName = (c: CharRow) => `${c.firstName} ${c.lastName}`;
 export async function startExplore(characterId: number) {
   return withCharacter(characterId, async (tx, ch) => {
     assertCanAct(ch);
+    await assertHeliSearchable(ch.locationId); // capítulo 1: destroços cercados de infectados
     const e = cfg().exploration; const loc = getLocation(ch.locationId)!;
     if (ch.needs.energy < e.energyCost) fail('Você está exausto demais para vasculhar. Descanse ou durma — ainda dá para conversar, negociar e organizar o inventário.', 'no_energy');
     if (ch.needs.stamina < e.staminaCost) fail('Recupere o fôlego antes de vasculhar.', 'no_stamina');
@@ -74,9 +76,11 @@ export async function completeExplore(jobId: number, characterId: number) {
       baseFinds: e.baseFinds, repeatPenalty: recent * e.repeatSearchPenaltyPerSearch, minRatio: e.minReserveRatioToFind,
     });
     const table = getLootTable(loc.lootTableId);
-    const found: string[] = []; let dropped = false;
+    // capítulo 1: enquanto houver o que tirar dos destroços do helicóptero, a busca é neles
+    const heliFound = await heliSearch(tx, ch);
+    const found: string[] = heliFound ?? []; let dropped = false;
     let carry = carryInfo(items, ch);
-    for (let i = 0; i < count && table; i++) {
+    for (let i = 0; i < count && table && !heliFound; i++) {
       const entry = rollEntry(table.entries, clock().isDark, loc.tags);
       if (!entry) continue;
       const def = itemDef(entry.itemId); if (!def) continue;

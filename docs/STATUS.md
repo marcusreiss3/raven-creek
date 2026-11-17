@@ -42,6 +42,7 @@ Verificado em navegador com duas contas e coberto por testes automatizados.
 - ✅ Turnos com prazo; inatividade → defesa; desconectado → recua sozinho até a saída
 - ✅ Ferimentos por região com proteção da roupa; mordidas podem infectar; letalidade (tiro na cabeça, hemorragia, desmaio por dor)
 - ✅ Espectadores e reforços de outros jogadores no mesmo local
+- ✅ Em vez de morrer na hora, o personagem cai: tem 1–3 min (configurável) para alguém reanimá-lo com um kit de primeiros socorros (infecção zumbi não tem volta)
 - 🟡 Arrastar aliado caído — pendente (hoje: socorrer com itens; aliados caídos ficam vulneráveis)
 
 ## Etapa 5 — Mundo avançado
@@ -54,12 +55,16 @@ Verificado em navegador com duas contas e coberto por testes automatizados.
 - ✅ Hordas migrando pelo mapa, alertas nos locais vizinhos, dano às estruturas de bases
 - 🟡 Invasão de base por jogadores (arrombar estoque) — pendente; estoques só abrem para dono/facção
 - 🟡 Defesa tática automática quando uma horda chega — pendente; hoje a horda aumenta a ameaça do local e danifica estruturas (o mestre pode iniciar o confronto pelo painel)
-- ⏳ Porta-malas de veículo (o banco suporta itens em veículos; falta interface)
+- ✅ Porta-malas de veículo com limite de peso (capacidade de carga de cada tipo), acesso restrito à facção dona
+- ✅ Tirar peças de um veículo para pôr em outro (pneu, bateria, motor inteiro, combustível com galão vazio), exigindo nível de Mecânica e ferramentas
+- ✅ Silenciadores específicos por arma (9mm; .308 para rifle e fuzil), achados ou fabricados (os improvisados gastam rápido): o tiro não atrai infectados nem ecoa
+- ✅ Livros levam minutos para ler (personagem ocupado, pode desistir) e marcações no próprio mapa (somem se o mapa for perdido)
 - ⏳ Carregadores como itens separados (hoje a munição fica carregada na arma)
 
 ## Etapa 6 — Administração e acabamento
 - ✅ Painel protegido por cargo (admin, moderador, mestre): visão geral, jogadores (cargo, ban, silenciar), personagens (necessidades, curar, matar, reviver, mover, dar/remover itens, iniciar confronto), mundo (editar locais, cenário, arena, loot, perigo, zumbis, reservas, criar locais e conexões, bloquear rotas), loot com % calculada, eventos (pesos, condições, efeitos, probabilidades efetivas, disparar, programar, histórico), zumbis, itens, hordas, veículos, bases, configurações globais, catálogo de assets com envio e uso, logs, denúncias
 - ✅ Todas as ações administrativas sensíveis geram auditoria
+- ✅ História (eventos globais): capítulos de lore prontos (`server/src/game/content/chapters.ts`) ou escritos na hora, ativados pelo painel; boletim em tela cheia para todos, diário, rádio e efeitos no mundo
 - ✅ Clima e ciclo dia/noite com camadas visuais; lanterna necessária para ler e vasculhar bem no escuro
 - ✅ Permadeath configurável, corpo com pertences, reanimação como infectado nomeado, memorial com epitáfio
 - ✅ Gerenciador de áudio (crossfade, por local, combate, volumes salvos, autoplay respeitado) — 🟡 **sem arquivos de áudio** (ver AUDIO.md)

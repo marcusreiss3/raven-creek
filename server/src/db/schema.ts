@@ -111,6 +111,8 @@ export type Needs = {
   hunger: number; thirst: number; sleepiness: number; stamina: number; energy: number;
   stress: number; bodyTemp: number; blood: number; boredom: number; vitality: number;
   painkillerUntil?: number; antibioticUntil?: number; unconscious?: boolean; lastDrain?: string;
+  /** Caído: morre quando o prazo vence, a menos que alguém use um kit de primeiros socorros (ver services/death.ts). */
+  downedUntil?: number; downedCause?: string;
   /** Vícios: fissura (nicotine/alcohol), dependência e embriaguez — ver rules/addiction.ts. */
   nicotine?: number; alcohol?: number; nicotineDep?: number; alcoholDep?: number; drunk?: number;
 };

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ARENA_LAYOUTS } from './arenaLayouts';
+import { HELI_ROWS, HeliArenaArt } from './Lore';
 import { useIsMobile, buzz } from '../lib/mobile';
 import { GameIcon } from '../components/GameIcon';
 import { useGame } from '../lib/store';
@@ -118,7 +119,7 @@ export function CombatScreen() {
   const [showVision, setShowVision] = useState(() => { try { return localStorage.getItem('rc.combat.vision') !== '0'; } catch { return true; } });
   const toggleVision = () => setShowVision((v) => { try { localStorage.setItem('rc.combat.vision', v ? '0' : '1'); } catch { /* sem armazenamento */ } return !v; });
   const vision = useMemo(() => (combat && showVision ? visionTiles(combat) : new Map<string, 'alert' | 'calm'>()), [combat, showVision]);
-  const layout = combat ? ARENA_LAYOUTS[combat.mapKey] ?? null : null;
+  const layout = combat ? ARENA_LAYOUTS[combat.mapKey] ?? (combat.mapKey === 'heli_crash' ? HELI_ROWS : null) : null;
   const T = !combat ? 0 : mobile ? (fit ? Math.floor((box.w - 20) / combat.width) : 44) : Math.max(18, Math.floor(Math.min((box.w - 320 - 44) / combat.width, (box.h - 300) / combat.height, 64)));
   // celular: o tabuleiro não cabe inteiro com casas boas de tocar, então rola e acompanha o seu personagem
   useEffect(() => {
@@ -183,7 +184,7 @@ export function CombatScreen() {
         {mobile && combat.log.length > 0 && <p className="text-[13.5px] text-ink-200 px-1 mb-2 line-clamp-2" aria-live="polite"><span className="text-tape">Rodada {combat.round}.</span> {combat.log[combat.log.length - 1].text}</p>}
         <div ref={boardBox} className={mobile ? 'overflow-auto max-h-[58vh] -mx-2 px-2 overscroll-contain' : 'contents'}>
         <div className="relative shrink-0 border-[6px] border-[#23261c] outline outline-1 outline-black shadow-[0_0_60px_rgba(0,0,0,.9)]" style={{ width: T * combat.width + 12, height: T * combat.height + 12 }}>
-          <Img src={arenaUrl(combat.mapKey)} fallback={arenaUrl('street')} className={`absolute inset-0 w-full h-full object-cover ${layout ? '' : 'opacity-35'}`} />
+          {combat.mapKey === 'heli_crash' ? <HeliArenaArt /> : <Img src={arenaUrl(combat.mapKey)} fallback={arenaUrl('street')} className={`absolute inset-0 w-full h-full object-cover ${layout ? '' : 'opacity-35'}`} />}
           <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${combat.width}, ${T}px)`, gridAutoRows: `${T}px` }}>
             {combat.tiles.flatMap((row, y) => [...row].map((t, x) => {
               const inReach = reach.has(k(x, y)) && !(me && me.x === x && me.y === y);

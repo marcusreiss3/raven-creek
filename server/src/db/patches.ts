@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, schema } from './index.js';
 import { ITEM_DEFS, RECIPES } from '../game/content/items.js';
-import { HORDE_GEAR_LOOT, LOOT_TABLES, PROTECTIVE_GEAR_LOOT } from '../game/content/loot.js';
+import { HORDE_GEAR_LOOT, LOOT_TABLES, PROTECTIVE_GEAR_LOOT, SUPPRESSOR_LOOT } from '../game/content/loot.js';
 
 const itemRow = (d: (typeof ITEM_DEFS)[number]) => ({ id: d.id, name: d.name, category: d.category, description: d.description ?? '', weight: d.weight, volume: (d as any).volume ?? 1, stackable: !!d.stackable, maxStack: d.maxStack ?? 1, durabilityMax: d.durabilityMax ?? 0, rarity: d.rarity ?? 'common', equipSlot: d.equipSlot ?? null, icon: d.icon ?? 'generic', props: d.props ?? {} });
 
@@ -322,6 +322,25 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       if (kit) await db.insert(schema.itemDefs).values(itemRow(kit) as any).onConflictDoNothing();
       const rec = RECIPES.find((r) => r.id === 'barricade_kit_craft');
       if (rec) await db.insert(schema.recipes).values(rec as any).onConflictDoUpdate({ target: schema.recipes.id, set: rec as any });
+    },
+  },
+  {
+    version: 21, name: 'Silenciadores, peças de veículo removíveis (motor, galão vazio) e leitura demorada',
+    run: async () => {
+      for (const id of ['suppressor_9mm', 'suppressor_308', 'suppressor_improvised_9mm', 'suppressor_improvised_308', 'gas_can_empty', 'car_engine']) {
+        const d = ITEM_DEFS.find((x) => x.id === id); if (d) await db.insert(schema.itemDefs).values(itemRow(d) as any).onConflictDoNothing();
+      }
+      for (const id of ['suppressor_improvised_9mm_craft', 'suppressor_improvised_308_craft', 'suppressor_9mm_craft', 'suppressor_308_craft']) {
+        const rec = RECIPES.find((r) => r.id === id);
+        if (rec) await db.insert(schema.recipes).values(rec as any).onConflictDoUpdate({ target: schema.recipes.id, set: rec as any });
+      }
+      for (const [tableId, adds] of Object.entries(SUPPRESSOR_LOOT)) {
+        const [t] = await db.select().from(schema.lootTables).where(eq(schema.lootTables.id, tableId));
+        if (!t) continue;
+        const entries = [...(t.entries as any[])];
+        for (const a of adds) if (!entries.some((x) => x.itemId === a.itemId)) entries.push(a);
+        await db.update(schema.lootTables).set({ entries }).where(eq(schema.lootTables.id, tableId));
+      }
     },
   },
 ];

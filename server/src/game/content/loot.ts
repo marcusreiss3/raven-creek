@@ -113,3 +113,16 @@ export const HORDE_GEAR_LOOT: Record<string, LootEntry[]> = {
   school: [e('alarm_clock', 1)],
 };
 for (const t of LOOT_TABLES) for (const x of HORDE_GEAR_LOOT[t.id] ?? []) if (!t.entries.some((y) => y.itemId === x.itemId)) t.entries.push(x);
+
+/** Silenciadores (raros, onde há armas) e galões vazios (onde há carros). */
+export const SUPPRESSOR_LOOT: Record<string, LootEntry[]> = {
+  police_armory: [e('suppressor_9mm', 0.8)],
+  military_armory: [e('suppressor_308', 0.8), e('suppressor_9mm', 0.6)],
+  military: [e('suppressor_9mm', 0.2)],
+  residential_hunter: [e('suppressor_improvised_308', 0.4)],
+  garage: [e('gas_can_empty', 2)],
+  workshop: [e('gas_can_empty', 2), e('suppressor_improvised_9mm', 0.3)],
+  gas_station: [e('gas_can_empty', 3)],
+  scrapyard: [e('gas_can_empty', 1.5)],
+};
+for (const t of LOOT_TABLES) for (const x of SUPPRESSOR_LOOT[t.id] ?? []) if (!t.entries.some((y) => y.itemId === x.itemId)) t.entries.push(x);
