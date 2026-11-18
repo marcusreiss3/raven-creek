@@ -58,7 +58,7 @@ function C(a: string, b: string, roadType: Conn['roadType'], travelSceneKey?: st
 const R = 'raven_creek';
 L('rc_main_street', R, 'Rua Principal', 'street', 'street_city_01', 0, 0, { danger: 0.45, lootTableId: 'street', description: 'A avenida central, coberta de vidro quebrado e carros batidos. O ponto de partida de todo sobrevivente.', tags: ['spawn'] });
 L('rc_commercial', R, 'Centro Comercial', 'commercial', 'commercial_01', 160, -60, { danger: 0.5, lootTableId: 'store', description: 'Vitrines estilhaçadas e lojas saqueadas pela metade.' });
-L('rc_police', R, 'Delegacia — Recepção', 'police', 'police_lobby', -180, -120, { indoor: true, danger: 0.55, lootTableId: 'police', description: 'Mesas reviradas, papéis espalhados e um cheiro metálico no ar.' });
+L('rc_police', R, 'Delegacia — Recepção', 'police', 'police_lobby', -180, -120, { indoor: true, danger: 0.55, lootTableId: 'police', buildable: true, data: { clearWork: 6 }, description: 'Mesas reviradas, papéis espalhados e um cheiro metálico no ar.' });
 L('rc_police_cells', R, 'Delegacia — Celas', 'police', 'police_cells', -200, -150, { indoor: true, danger: 0.6, lootTableId: 'police' });
 L('rc_police_armory', R, 'Delegacia — Arsenal', 'police', 'armory_01', -215, -130, { indoor: true, danger: 0.65, lootTableId: 'police_armory', tags: ['locked'] });
 L('rc_market', R, 'Mercado da Esquina', 'store', 'store_interior_01', 90, 110, { indoor: true, danger: 0.4, lootTableId: 'store' });
@@ -67,12 +67,12 @@ L('rc_pharmacy', R, 'Farmácia Wells', 'pharmacy', 'pharmacy_01', 210, 40, { ind
 L('rc_hospital_entrance', R, 'Hospital St. Mary — Entrada', 'hospital', 'hospital_exterior', 420, 260, { danger: 0.65, lootTableId: 'street', description: 'Ambulâncias abandonadas e macas tombadas bloqueiam a entrada.' });
 L('rc_hospital_lobby', R, 'Hospital — Recepção', 'hospital', 'hospital_lobby', 440, 280, { indoor: true, danger: 0.65, lootTableId: 'hospital' });
 L('rc_hospital_corridor', R, 'Hospital — Corredor Leste', 'hospital', 'hospital_corridor', 470, 290, { indoor: true, danger: 0.7, lootTableId: 'hospital', description: 'Lâmpadas piscando, marcas de mãos ensanguentadas na parede.' });
-L('rc_hospital_ward', R, 'Hospital — Enfermaria', 'hospital', 'hospital_ward', 490, 310, { indoor: true, danger: 0.75, lootTableId: 'hospital' });
+L('rc_hospital_ward', R, 'Hospital — Enfermaria', 'hospital', 'hospital_ward', 490, 310, { indoor: true, danger: 0.75, lootTableId: 'hospital', buildable: true, data: { clearWork: 8 } });
 L('rc_hospital_surgery', R, 'Hospital — Centro Cirúrgico', 'hospital', 'hospital_surgery', 510, 290, { indoor: true, danger: 0.75, lootTableId: 'hospital_surgery' });
 L('rc_hospital_pharmacy', R, 'Hospital — Farmácia Interna', 'hospital', 'pharmacy_01', 480, 270, { indoor: true, danger: 0.7, lootTableId: 'pharmacy' });
 L('rc_hospital_morgue', R, 'Hospital — Necrotério', 'hospital', 'hospital_morgue', 470, 320, { indoor: true, danger: 0.85, lootTableId: 'hospital' });
 L('rc_school', R, 'Escola Lincoln — Pátio', 'school', 'school_exterior', -320, 220, { danger: 0.45, lootTableId: 'school' });
-L('rc_school_classrooms', R, 'Escola — Salas de Aula', 'school', 'school_classroom', -340, 240, { indoor: true, danger: 0.45, lootTableId: 'school' });
+L('rc_school_classrooms', R, 'Escola — Salas de Aula', 'school', 'school_classroom', -340, 240, { indoor: true, danger: 0.45, lootTableId: 'school', buildable: true, data: { clearWork: 5 } });
 L('rc_school_gym', R, 'Escola — Ginásio', 'school', 'school_gym', -300, 260, { indoor: true, danger: 0.55, lootTableId: 'school', buildable: true, description: 'O ginásio foi abrigo de emergência. Catres e cobertores por toda parte.' });
 L('rc_school_cafeteria', R, 'Escola — Refeitório', 'school', 'cafeteria_01', -350, 200, { indoor: true, danger: 0.45, lootTableId: 'restaurant' });
 L('rc_gas_station', R, 'Posto Gulf', 'gas_station', 'gas_station_01', 300, -280, { danger: 0.4, lootTableId: 'gas_station' });
@@ -81,7 +81,7 @@ L('rc_workshop', R, 'Oficina do Hank', 'workshop', 'workshop_01', 260, -200, { i
 L('rc_city_hall', R, 'Prefeitura', 'office', 'city_hall_01', -60, -260, { indoor: true, danger: 0.45, lootTableId: 'office' });
 L('rc_church', R, 'Igreja de São Jorge', 'church', 'church_01', -220, 380, { indoor: true, danger: 0.3, lootTableId: 'church', buildable: true });
 L('rc_clinic', R, 'Clínica Familiar', 'clinic', 'clinic_01', 330, 120, { indoor: true, danger: 0.5, lootTableId: 'clinic' });
-L('rc_supermarket', R, 'Supermercado FoodMax', 'supermarket', 'supermarket_01', -120, 160, { indoor: true, danger: 0.6, lootTableId: 'supermarket' });
+L('rc_supermarket', R, 'Supermercado FoodMax', 'supermarket', 'supermarket_01', -120, 160, { indoor: true, danger: 0.6, lootTableId: 'supermarket', buildable: true, data: { clearWork: 6 } });
 L('rc_supermarket_back', R, 'FoodMax — Estoque', 'supermarket', 'store_storage', -140, 180, { indoor: true, danger: 0.6, lootTableId: 'supermarket' });
 L('rc_parking', R, 'Estacionamento do FoodMax', 'parking', 'parking_01', -100, 120, { danger: 0.5, lootTableId: 'street' });
 L('rc_sewer', R, 'Galerias de Esgoto', 'sewer', 'sewer_01', 30, 60, { indoor: true, danger: 0.55, lootTableId: 'sewer', description: 'Escuro, úmido, apertado. Uma rota pouco usada pelos mortos — e pelos vivos.' });
@@ -151,7 +151,7 @@ L('pr_reception', P, 'Prisão — Recepção', 'prison_inside', 'prison_receptio
 L('pr_admin_hall', P, 'Prisão — Corredor Administrativo', 'prison_inside', 'prison_corridor', 4210, -2590, { indoor: true, danger: 0.75, lootTableId: 'office' });
 L('pr_guard_room', P, 'Prisão — Sala dos Guardas', 'prison_inside', 'prison_guard_room', 4230, -2570, { indoor: true, danger: 0.75, lootTableId: 'police' });
 L('pr_armory', P, 'Prisão — Arsenal', 'prison_inside', 'armory_01', 4250, -2560, { indoor: true, danger: 0.8, lootTableId: 'police_armory', tags: ['locked'] });
-L('pr_yard', P, 'Prisão — Pátio', 'prison', 'prison_yard', 4260, -2650, { danger: 0.9, lootTableId: 'prison', description: 'O pátio onde os detentos se amontoaram no fim. Muitos ainda estão aqui.' });
+L('pr_yard', P, 'Prisão — Pátio', 'prison', 'prison_yard', 4260, -2650, { danger: 0.9, lootTableId: 'prison', buildable: true, data: { clearWork: 10 }, description: 'O pátio onde os detentos se amontoaram no fim. Muitos ainda estão aqui.' });
 L('pr_cafeteria', P, 'Prisão — Refeitório', 'prison_inside', 'cafeteria_01', 4240, -2620, { indoor: true, danger: 0.8, lootTableId: 'restaurant' });
 L('pr_infirmary', P, 'Prisão — Enfermaria', 'prison_inside', 'hospital_ward', 4220, -2630, { indoor: true, danger: 0.75, lootTableId: 'clinic' });
 L('pr_block_a', P, 'Prisão — Bloco A', 'prison_inside', 'prison_cell_block', 4290, -2680, { indoor: true, danger: 0.9, lootTableId: 'prison' });

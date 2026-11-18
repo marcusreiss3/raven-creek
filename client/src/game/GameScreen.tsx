@@ -140,7 +140,8 @@ export function CharacterMenu({ c, onClose }: { c: SceneChar; onClose: () => voi
       </div>
       {!isSelf && (
         <div className="flex flex-wrap gap-1.5 mt-4 max-sm:grid max-sm:grid-cols-2 max-sm:[&>button]:justify-start">
-          <button className="btn" onClick={() => { action(self?.followingId === c.id ? 'follow' : 'follow', { targetId: self?.followingId === c.id ? null : c.id }); onClose(); }}><GameIcon name="follow" size={16} />{self?.followingId === c.id ? 'Parar de seguir' : 'Acompanhar (viajar junto)'}</button>
+          <button className="btn" onClick={() => { action('follow', { targetId: self?.followingId === c.id ? null : c.id }); onClose(); }}><GameIcon name="follow" size={16} />{self?.followingId === c.id ? 'Parar de seguir' : 'Acompanhar (viajar junto)'}</button>
+          {c.followingId === self?.id && <button className="btn" onClick={() => { action('follow_dismiss', { targetId: c.id }); onClose(); }}><GameIcon name="exit" size={16} />Dispensar (parar de te seguir)</button>}
           <button className="btn" onClick={() => { useGame.getState().set({ chatPmTo: c.id, mobileTab: 'chat' }); if (!isMobile()) useGame.getState().toast('Use a aba "Sussurro" do chat: só quem está aqui ouve.', 'info'); onClose(); }}><GameIcon name="whisper" size={16} />Sussurrar</button>
           <button className="btn" onClick={() => { useGame.getState().set({ panel: 'body', bodyPatient: c.id }); onClose(); }}><GameIcon name="aid" size={16} />Prestar socorro</button>
           <button className="btn" onClick={() => { useGame.getState().set({ panel: 'inventory' }); onClose(); }}><GameIcon name="inventory" size={16} />Entregar item</button>
@@ -161,14 +162,22 @@ export function CharacterMenu({ c, onClose }: { c: SceneChar; onClose: () => voi
   );
 }
 
-function ContainerModal({ ct, onClose }: { ct: { id: number; name: string; kind: string }; onClose: () => void }) {
+/** Quanto falta para o corpo se decompor, em palavras. */
+function decayText(expiresAt?: string | null) {
+  if (!expiresAt) return 'O corpo vai se decompor em algumas horas; os pertences ficarão no chão.';
+  const min = Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 60000));
+  const when = min < 2 ? 'a qualquer momento' : min < 60 ? `em cerca de ${min} min` : `em cerca de ${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
+  return `O corpo se decompõe ${when}. Depois disso, o que ele carregava fica espalhado pelo chão.`;
+}
+
+function ContainerModal({ ct, onClose }: { ct: { id: number; name: string; kind: string; expiresAt?: string | null }; onClose: () => void }) {
   const self = useGame((s) => s.self);
   const [items, setItems] = useState<Item[] | null>(null);
   const load = () => action('container_open', { containerId: ct.id }).then((r) => r.ok && setItems(r.items));
   useEffect(() => { load(); }, [ct.id]);
   return (
     <Modal title={ct.name} onClose={onClose} width={620}>
-      {ct.kind === 'corpse' && <div className="text-[13.5px] text-blood-400 mb-3 flex items-center gap-1.5"><GameIcon name="corpse" size={15} />Os pertences de quem morreu ficam aqui por tempo limitado.</div>}
+      {ct.kind === 'corpse' && <div className="text-[13.5px] text-blood-400 mb-3 flex items-center gap-1.5"><GameIcon name="corpse" size={15} />{decayText(ct.expiresAt)}</div>}
       <div className="grid grid-cols-2 gap-4">
         <div><h3 className="text-[13.5px] text-tape mb-1.5">Dentro, clique para pegar</h3><div className="space-y-1 max-h-72 overflow-y-auto">{items?.map((i) => <ItemRow key={i.id} i={i} onClick={() => action('take', { itemId: i.id, containerId: ct.id }).then(load)} hint="pegar" />)}{items && !items.length && <div className="text-[14px] text-ink-400 py-2">Vazio.</div>}</div></div>
         {ct.kind !== 'corpse' && <div><h3 className="text-[13.5px] text-tape mb-1.5">Sua mochila, clique para guardar</h3><div className="space-y-1 max-h-72 overflow-y-auto">{self?.inventory.filter((i) => !i.slot).map((i) => <ItemRow key={i.id} i={i} onClick={() => action('store', { itemId: i.id, containerId: ct.id }).then(load)} hint="guardar" />)}</div></div>}

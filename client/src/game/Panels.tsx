@@ -58,6 +58,30 @@ export function CraftingPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Locais grandes precisam ser limpos antes de virar base: primeiro os infectados, depois o trabalho braçal. */
+function ClearingSection() {
+  const { self, scene } = useGame();
+  if (!self || !scene?.clearing) return null;
+  const { need, done, zombies } = scene.clearing;
+  const busy = self.state !== 'idle';
+  return (
+    <div className="space-y-3">
+      <p className="text-[14.5px] text-ink-200"><b>{scene.location.name}</b> é grande e seguro o bastante para virar uma base, mas do jeito que está ninguém dorme aqui. Antes de reivindicar, é preciso limpar o lugar. Qualquer sobrevivente pode ajudar; o progresso fica guardado.</p>
+      <div>
+        <div className="flex justify-between text-[13.5px] mb-1"><span className="text-ink-300">Limpeza</span><span className="tabular-nums text-ink-200">{done} de {need}</span></div>
+        <Bar value={done} max={need} color="#9ab567" />
+      </div>
+      <ol className="text-[13.5px] space-y-1">
+        <li className={zombies > 0 ? 'text-blood-400' : 'text-moss-400'}><GameIcon name={zombies > 0 ? 'zombie' : 'check'} size={14} className="inline mr-1" />{zombies > 0 ? `Expulsar os infectados: ainda há ${zombies} aqui dentro.` : 'Nenhum infectado no local.'}</li>
+        <li className={zombies > 0 ? 'text-ink-400' : 'text-ink-200'}><GameIcon name="crafting" size={14} className="inline mr-1" />Tirar corpos, tapar janelas e desobstruir corredores ({need - done} rodada{need - done === 1 ? '' : 's'} de cerca de 1 min e meio, 10 de energia cada).</li>
+      </ol>
+      <button className={`btn ${zombies > 0 ? 'btn-danger' : 'btn-moss'}`} disabled={busy || (zombies === 0 && self.needs.energy < 10)} onClick={() => action('clear_site')}>
+        <GameIcon name={zombies > 0 ? 'combat' : 'base'} size={16} />{zombies > 0 ? 'Enfrentar os infectados' : 'Limpar o local'}
+      </button>
+    </div>
+  );
+}
+
 export function BasePanel({ onClose }: { onClose: () => void }) {
   const { self, scene, content } = useGame();
   const [name, setName] = useState(''); const [confirm, setConfirm] = useState(false);
@@ -66,8 +90,9 @@ export function BasePanel({ onClose }: { onClose: () => void }) {
   const count = (id: string) => self.inventory.filter((i) => i.defId === id && !i.slot).reduce((s, i) => s + i.quantity, 0);
   return (
     <Drawer title={base ? `Base: ${base.name}` : 'Bases'} onClose={onClose} width={600} icon={<GameIcon name="base" size={22} />}>
-      {!scene.location.buildable && <Empty>Este local não pode ser fortificado. Procure casas, fazendas, armazéns, galpões e oficinas.</Empty>}
-      {scene.location.buildable && !base && (
+      {!scene.location.buildable && <Empty>Este local não pode ser fortificado. Procure casas, fazendas, armazéns, galpões e oficinas — ou limpe um lugar grande, como o hospital, a escola, a delegacia, o supermercado ou a prisão.</Empty>}
+      {scene.location.buildable && !base && scene.clearing && scene.clearing.done < scene.clearing.need && <ClearingSection />}
+      {scene.location.buildable && !base && !(scene.clearing && scene.clearing.done < scene.clearing.need) && (
         <div className="space-y-3">
           <p className="text-[14.5px] text-ink-200">Reivindicar <b>{scene.location.name}</b> como base. Ela terá um estoque compartilhado e poderá receber construções. Se você estiver em uma facção, a base pertencerá a ela.</p>
           <input aria-label="Nome da base" className="input" placeholder="Nome da base" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />

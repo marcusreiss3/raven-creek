@@ -355,6 +355,16 @@ const PATCHES: { version: number; name: string; run: () => Promise<void> }[] = [
       for (const k of owners) { const [t, id] = k.split('\u0000'); await db.transaction((tx) => mergeOwnerStacks(tx, t, id)); }
     },
   },
+  {
+    version: 23, name: 'Novos locais de base (hospital, escola, delegacia, supermercado, prisão) — precisam ser limpos antes',
+    run: async () => {
+      const { LOCATIONS } = await import('../game/content/world.js');
+      for (const l of LOCATIONS) {
+        const work = Number(l.data?.clearWork ?? 0); if (!work) continue;
+        await db.update(schema.locations).set({ buildable: true, data: sql`${schema.locations.data} || ${JSON.stringify({ clearWork: work })}::jsonb` }).where(eq(schema.locations.id, l.id));
+      }
+    },
+  },
 ];
 
 export async function applyPatches() {

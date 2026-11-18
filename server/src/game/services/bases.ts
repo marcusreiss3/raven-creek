@@ -37,7 +37,12 @@ export async function claimBase(characterId: number, name: string) {
     const [existing] = await tx.select().from(schema.bases).where(eq(schema.bases.locationId, loc.id));
     if (existing) fail('Este local já foi reivindicado.');
     const [ll] = await tx.select().from(schema.locationLoot).where(eq(schema.locationLoot.locationId, loc.id));
-    if (cfg().build.claimRequiresNoZombies && (ll?.zombies ?? 0) > 0) fail('Limpe os infectados do local antes de reivindicá-lo.');
+    const work = clearWorkOf(loc.data);
+    if ((work > 0 || cfg().build.claimRequiresNoZombies) && (ll?.zombies ?? 0) > 0) fail('Limpe os infectados do local antes de reivindicá-lo.');
+    if (work > 0) {
+      const [row] = await tx.select({ data: schema.locations.data }).from(schema.locations).where(eq(schema.locations.id, loc.id));
+      if (clearedOf(row?.data) < work) fail(`Este lugar ainda não foi limpo (${clearedOf(row?.data)} de ${work}). Use "Limpar o local" no painel de bases.`);
+    }
     const m = await membership(tx, ch.id);
     const [base] = await tx.insert(schema.bases).values({ locationId: loc.id, name: name.trim().slice(0, 40) || loc.name, ownerCharacterId: ch.id, factionId: m?.factionId ?? null }).returning();
     await tx.insert(schema.containers).values({ locationId: loc.id, name: `Estoque — ${base.name}`, kind: 'base_storage', baseId: base.id, capacity: 60 });
@@ -45,6 +50,76 @@ export async function claimBase(characterId: number, name: string) {
     await systemEmote(loc.id, `${fullName(ch)} reivindica este lugar: agora é a base "${base.name}".`, 'system');
     pushScene(loc.id);
     return { ok: true, baseId: base.id };
+  });
+}
+
+// ───────────────────────── Limpeza de locais grandes ─────────────────────────
+/**
+ * Locais grandes (hospital, escola, delegacia, supermercado, prisão) só viram base depois de LIMPOS:
+ * primeiro é preciso derrubar todos os infectados do lugar; depois, várias rodadas de trabalho
+ * (tirar corpos, fechar janelas quebradas, empilhar entulho). O progresso é compartilhado: qualquer
+ * sobrevivente pode ajudar, e fica guardado no local.
+ */
+const clearWorkOf = (data: unknown) => Number((data as any)?.clearWork ?? 0);
+const clearedOf = (data: unknown) => Number((data as any)?.cleared ?? 0);
+const CLEAR_SECONDS = 90; const CLEAR_ENERGY = 10;
+const CLEAR_TASKS = ['arrasta os corpos para fora', 'tapa as janelas quebradas com tábuas', 'empilha o entulho bloqueando os corredores', 'lava o sangue do chão', 'verifica cada sala e fecha as portas', 'junta os vidros e restos espalhados'];
+
+export async function clearSite(characterId: number) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch);
+    const loc = getLocation(ch.locationId)!;
+    const work = clearWorkOf(loc.data);
+    if (!loc.buildable || work <= 0) fail('Este local não precisa ser limpo.');
+    const [base] = await tx.select().from(schema.bases).where(eq(schema.bases.locationId, loc.id));
+    if (base) fail('Este local já é uma base.');
+    const [row] = await tx.select({ data: schema.locations.data }).from(schema.locations).where(eq(schema.locations.id, loc.id));
+    if (clearedOf(row?.data) >= work) fail('O local já está limpo. Pode reivindicá-lo como base.');
+    const [ll] = await tx.select().from(schema.locationLoot).where(eq(schema.locationLoot.locationId, loc.id));
+    const zombies = ll?.zombies ?? 0;
+    if (zombies > 0) {
+      // ainda há infectados: limpar começa pelo confronto
+      const { startCombat } = await import('./combat.js');
+      const n = Math.max(1, Math.min(zombies, 1 + Math.floor(Math.random() * (loc.danger > 0.6 ? 3 : 2))));
+      const reason = `Limpando ${loc.name}: ainda há ${zombies} infectado${zombies > 1 ? 's' : ''} aqui`;
+      await startCombat(tx, { characters: [ch], locationId: loc.id, zombieCount: n, reason });
+      await gameLog(tx, ch.id, 'combat', reason);
+      await systemEmote(loc.id, `${fullName(ch)} avança pelos cômodos para expulsar os infectados de ${loc.name}.`, 'system');
+      pushSelf(ch.id); pushScene(loc.id);
+      return { ok: true, combat: true };
+    }
+    if (ch.needs.energy < CLEAR_ENERGY) fail('Energia insuficiente para esse trabalho agora.', 'no_energy');
+    const seconds = CLEAR_SECONDS / (1 + (ch.attributes?.strength ?? 5) * 0.03);
+    const runAt = new Date(Date.now() + seconds * 1000);
+    const task = CLEAR_TASKS[Math.floor(Math.random() * CLEAR_TASKS.length)];
+    const [job] = await tx.insert(schema.jobs).values({ kind: 'clear_complete', characterId: ch.id, runAt, payload: { locationId: loc.id } }).returning();
+    await tx.update(schema.characters).set({ state: 'busy', activity: 'idle', busyUntil: runAt, busyAction: { type: 'clear', jobId: job.id, label: `Limpando o local`, startedAt: Date.now() },
+      needs: { ...ch.needs, energy: ch.needs.energy - CLEAR_ENERGY, stamina: clamp(ch.needs.stamina - 12, 0, 100) } }).where(eq(schema.characters.id, ch.id));
+    await systemEmote(loc.id, `${fullName(ch)} ${task}.`);
+    pushSelf(ch.id); pushScene(loc.id);
+    return { ok: true, seconds: Math.round(seconds) };
+  });
+}
+
+export async function completeClear(jobId: number, characterId: number, locationId: string) {
+  return withCharacter(characterId, async (tx, ch) => {
+    if ((ch.busyAction as any)?.jobId !== jobId) return { ok: true }; // cancelado
+    await tx.update(schema.characters).set({ state: 'idle', busyUntil: null, busyAction: null }).where(eq(schema.characters.id, ch.id));
+    const loc = getLocation(locationId); const work = clearWorkOf(loc?.data);
+    if (loc && work > 0 && ch.locationId === locationId) {
+      const [row] = await tx.update(schema.locations)
+        .set({ data: sql`jsonb_set(${schema.locations.data}, '{cleared}', to_jsonb(least(${work}, coalesce((${schema.locations.data}->>'cleared')::int, 0) + 1)))` })
+        .where(eq(schema.locations.id, locationId)).returning({ data: schema.locations.data });
+      const done = clearedOf(row?.data);
+      loc.data = { ...loc.data, cleared: done }; // cache do mundo
+      await giveXp(tx, ch, 'carpentry', 3, `clear_${locationId}_${done}`);
+      await gameLog(tx, ch.id, 'base', `Ajudou a limpar ${loc.name} (${done} de ${work}).`);
+      await systemEmote(locationId, done >= work
+        ? `${loc.name} está limpo. Pela primeira vez em semanas, dá para respirar aqui dentro. O lugar pode virar uma base.`
+        : `${fullName(ch)} termina uma parte da limpeza (${done} de ${work}).`, done >= work ? 'system' : undefined);
+    }
+    pushSelf(ch.id); pushScene(locationId);
+    return { ok: true };
   });
 }
 

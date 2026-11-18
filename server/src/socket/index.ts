@@ -19,7 +19,7 @@ import { buildScene, getLocation } from '../game/services/world.js';
 import { localHistory, onRetune, privateHistory, sendChat } from '../game/services/chat.js';
 import * as survival from '../game/services/survival.js';
 import { startExplore } from '../game/services/explore.js';
-import { decideEncounter, follow, joinTravel, previewTravel, startTravel, togglePause, turnBack } from '../game/services/travel.js';
+import { decideEncounter, dismissFollower, follow, joinTravel, previewTravel, startTravel, togglePause, turnBack } from '../game/services/travel.js';
 import { attackCharacter, combatAction, getCombatView, joinCombat } from '../game/services/combat.js';
 import * as bases from '../game/services/bases.js';
 import * as vehicles from '../game/services/vehicles.js';
@@ -46,7 +46,7 @@ const actionSchemas = {
   horde_lure: z.object({ method: z.enum(['firecrackers', 'alarm_clock', 'horn', 'shout']) }), safe_open: z.object({ mysteryId: z.string(), code: z.string().max(12) }),
   mural_list: z.object({}).optional(), mural_post: z.object({ content: z.string().min(1).max(600) }), mural_delete: z.object({ postId: id }),
   corpse_destroy: z.object({ containerId: id }), risen_fight: z.object({ risenId: id }),
-  dog_tame: z.object({ dogId: id, itemId: id }), dog_feed: z.object({ itemId: id }), dog_treat: z.object({ itemId: id }), dog_scavenge: z.object({}).optional(), dog_pet: z.object({}).optional(), dog_rename: z.object({ name: z.string().min(2).max(20) }), dog_release: z.object({}).optional(), follow: z.object({ targetId: id.nullable() }),
+  dog_tame: z.object({ dogId: id, itemId: id }), dog_feed: z.object({ itemId: id }), dog_treat: z.object({ itemId: id }), dog_scavenge: z.object({}).optional(), dog_pet: z.object({}).optional(), dog_rename: z.object({ name: z.string().min(2).max(20) }), dog_release: z.object({}).optional(), follow: z.object({ targetId: id.nullable() }), follow_dismiss: z.object({ targetId: id.nullable().optional() }),
   pickup: z.object({ itemId: id, qty: z.number().int().positive().optional() }), drop: z.object({ itemId: id, qty: z.number().int().positive().optional() }),
   give: z.object({ targetId: id, itemId: id, qty: z.number().int().positive().optional() }), equip: z.object({ itemId: id, slot: z.string().optional() }),
   unequip: z.object({ itemId: id }), use: z.object({ itemId: id }), repair_item: z.object({ itemId: id }), tear: z.object({ itemId: id }), dismantle: z.object({ itemId: id }), reload: z.object({}), unload: z.object({ itemId: id }),
@@ -56,7 +56,7 @@ const actionSchemas = {
   take: z.object({ itemId: id, containerId: id, qty: z.number().int().positive().optional() }),
   combat: z.object({ action: z.any() }), combat_join: z.object({ combatId: id, sideCharacterId: id.optional() }), combat_view: z.object({ combatId: id }),
   attack_character: z.object({ targetId: id }), search_body: z.object({ targetId: id }), steal: z.object({ targetId: id, itemId: id }),
-  craft: z.object({ recipeId: z.string() }), claim_base: z.object({ name: z.string().max(40) }), build: z.object({ kind: z.string() }),
+  craft: z.object({ recipeId: z.string() }), claim_base: z.object({ name: z.string().max(40) }), clear_site: z.object({}).optional(), build: z.object({ kind: z.string() }),
   repair: z.object({ structureId: id }), fuel_generator: z.object({ structureId: id, itemId: id }),
   faction_create: z.object({ name: z.string(), emblem: z.string().max(20).default('banner'), color: z.string().default('#b45309') }), faction_invite: z.object({ targetId: id }),
   faction_answer: z.object({ factionId: id, accept: z.boolean() }), faction_leave: z.object({}), faction_rank: z.object({ targetId: id, rank: z.string() }),
@@ -94,7 +94,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
   const c = ch.id; const p = payload;
   // Dia 1: as ações do mundo ficam travadas; tudo acontece pelo celular, pelo chat do local e pelos combates.
   // Parar de seguir alguém nunca fica travado (senão quem ficou para trás não consegue mais andar).
-  const unfollow = type === 'follow' && !p?.targetId;
+  const unfollow = (type === 'follow' && !p?.targetId) || type === 'follow_dismiss';
   if (isPrologueMember(c) && !unfollow && !PROLOGUE_ALLOWED.has(type) && !(FREE_ALLOWED.has(type) && (await prologueFreeIdle(c)))) {
     throw new GameError(FREE_ALLOWED.has(type) ? 'Agora não: termine o que está acontecendo (ou saia do trabalho para andar pelo mapa).' : 'No Dia 1, suas escolhas acontecem pelo celular.', 'prologue');
   }
@@ -145,6 +145,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     case 'dog_rename': return dogs.renameDog(c, p.name);
     case 'dog_release': return dogs.releaseDog(c);
     case 'follow': return follow(c, p.targetId);
+    case 'follow_dismiss': return dismissFollower(c, p?.targetId ?? null);
     case 'pickup': return survival.pickUp(c, p.itemId, p.qty);
     case 'drop': return survival.dropItem(c, p.itemId, p.qty);
     case 'give': return survival.giveItem(c, p.targetId, p.itemId, p.qty);
@@ -203,6 +204,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
     });
     case 'craft': return vehicles.craft(c, p.recipeId);
     case 'claim_base': return bases.claimBase(c, p.name);
+    case 'clear_site': return bases.clearSite(c);
     case 'build': return bases.build(c, p.kind);
     case 'repair': return bases.repairStructure(c, p.structureId);
     case 'fuel_generator': return bases.fuelGenerator(c, p.structureId, p.itemId);
@@ -256,7 +258,7 @@ async function dispatch(user: AuthUser, type: ActionType, payload: any) {
   }
 }
 /** Dia 1: quem saiu do trabalho (e não está no meio de um evento) pode andar pelo mapa. */
-const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow']);
+const FREE_ALLOWED = new Set<string>(['travel', 'travel_preview', 'travel_decide', 'travel_pause', 'travel_back', 'travel_join', 'follow', 'follow_dismiss']);
 const PROLOGUE_ALLOWED = new Set<string>(['prologue_state', 'prologue_leave', 'prologue_vote', 'prologue_reply', 'prologue_like', 'prologue_comment', 'prologue_light', 'prologue_send', 'look', 'equip', 'unequip', 'use', 'reload', 'unload', 'treat', 'diagnose', 'patient_sheet', 'give', 'combat', 'combat_view', 'tutorial', 'revive', 'read_stop', 'block_user', 'unblock_user', 'report', 'set_frequency']);
 /** Quem este usuário bloqueou, com o nome do personagem mais recente de cada um (para a lista de desbloqueio). */
 async function blockedList(userId: number) {

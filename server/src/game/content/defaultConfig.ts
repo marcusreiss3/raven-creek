@@ -165,7 +165,8 @@ export const defaultGameConfig = {
   },
   permadeath: {
     enabled: true,
-    corpseHours: 24,
+    /** Horas até o corpo se decompor (o servidor limita a 3). */
+    corpseHours: 3,
     maxAliveCharactersPerUser: 1,
     /** Em vez de morrer na hora, o personagem cai e pode ser reanimado com um kit de primeiros socorros dentro deste prazo (sorteado entre o mínimo e o máximo). Infecção zumbi não tem volta. */
     downedEnabled: true,

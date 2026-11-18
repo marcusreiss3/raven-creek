@@ -3,7 +3,7 @@ import { db, pool, schema } from '../../db/index.js';
 import { env } from '../../config/env.js';
 import { cfg } from './config.js';
 import { completeExplore } from './explore.js';
-import { completeBuild } from './bases.js';
+import { completeBuild, completeClear } from './bases.js';
 import { processCombatDeadlines } from './combat.js';
 import { processNeeds, recoverJobs } from './tick.js';
 import { processRoadSightings, processTravels } from './travel.js';
@@ -34,6 +34,7 @@ export async function processJobs(limit = 50) {
     try {
       if (j.kind === 'explore_complete') await completeExplore(j.id, j.characterId!);
       else if (j.kind === 'build_complete') await completeBuild(j.id, j.characterId!, Number(j.payload.structureId));
+      else if (j.kind === 'clear_complete') await completeClear(j.id, j.characterId!, String(j.payload.locationId));
       else if (j.kind === 'project_work') await completeProjectWork(j.id, j.characterId!, String(j.payload.projectId));
       else if (j.kind === 'hunt_complete') await completeOutdoorJob(j.id, j.characterId!, 'hunt', await dogHuntBonus(j.characterId!));
       else if (j.kind === 'fish_complete') await completeOutdoorJob(j.id, j.characterId!, 'fish');

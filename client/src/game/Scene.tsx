@@ -366,6 +366,7 @@ export function ActionBar() {
           ) : <button className="btn" onClick={() => action('wake')}><GameIcon name="wake" size={18} />{self.activity === 'sleeping' ? 'Acordar' : 'Levantar'}</button>}
           <NatureActions busy={!!busy} />
           {self.followingId && <button className="btn" onClick={() => action('follow', { targetId: null })}><GameIcon name="follow" size={18} />Parar de seguir</button>}
+          <DismissFollowers size={18} />
         </div>
         {busy && (
           <div className="w-full max-w-md" role="status">
@@ -379,6 +380,16 @@ export function ActionBar() {
       {observe && <ObserveModal onClose={() => setObserve(false)} />}
     </div>
   );
+}
+
+/** Quem está seguindo você: botão para dispensar (um nome só, ou todo mundo). */
+function DismissFollowers({ size }: { size: number }) {
+  const { self, scene } = useGame();
+  if (!self || !scene) return null;
+  const followers = scene.characters.filter((c) => c.followingId === self.id && c.id !== self.id);
+  if (!followers.length) return null;
+  const label = followers.length === 1 ? `Dispensar ${followers[0].name.split(' ')[0]}` : `Dispensar quem segue (${followers.length})`;
+  return <button className="btn" title="Faz quem está te seguindo parar de te acompanhar" onClick={() => action('follow_dismiss', { targetId: followers.length === 1 ? followers[0].id : null })}><GameIcon name="exit" size={size} />{label}</button>;
 }
 
 /** Celular: ações em grade de botões grandes, barra de "ocupado" e aviso de energia. */
@@ -412,6 +423,7 @@ export function MobileActions() {
         ) : <button className="btn" onClick={() => action('wake')}><GameIcon name="wake" size={19} />{self.activity === 'sleeping' ? 'Acordar' : 'Levantar'}</button>}
         <NatureActions busy={!!busy} />
         {self.followingId && <button className="btn" onClick={() => action('follow', { targetId: null })}><GameIcon name="follow" size={19} />Parar de seguir</button>}
+        <DismissFollowers size={19} />
       </div>
       {lowEnergy && <p className="text-[13px] text-amber-200 mt-2">Sem energia para vasculhar. Descanse ou durma; conversar, negociar e organizar continua liberado.</p>}
       {observe && <ObserveModal onClose={() => setObserve(false)} />}

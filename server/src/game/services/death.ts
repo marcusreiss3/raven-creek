@@ -9,6 +9,10 @@ import { emitToUser, pushScene, pushSelf } from './realtime.js';
 import { systemEmote } from './chat.js';
 import { scheduleRise } from './risen.js';
 
+/** Tempo até um corpo se decompor (no máximo 3 horas — o mundo não vira um cemitério a céu aberto). */
+export const CORPSE_MAX_HOURS = 3;
+export const corpseMs = () => Math.max(0.25, Math.min(CORPSE_MAX_HOURS, Number(cfg().permadeath.corpseHours ?? CORPSE_MAX_HOURS))) * 3_600_000;
+
 /**
  * Morte de personagem. Com permadeath: deixa de ser jogável, o corpo (com o inventário) fica no local
  * por um tempo, entra no memorial e — se a causa foi infecção zumbi e o servidor permitir — reanima.
@@ -21,7 +25,7 @@ export async function killCharacter(tx: Tx, ch: CharRow, cause: string) {
   const locationId = ch.locationId;
   const [corpse] = await tx.insert(schema.containers).values({
     locationId, name: `Corpo de ${name}`, kind: 'corpse', capacity: 999,
-    expiresAt: new Date(now.getTime() + pd.corpseHours * 3_600_000), data: { characterId: ch.id, cause },
+    expiresAt: new Date(now.getTime() + corpseMs()), data: { characterId: ch.id, cause },
   }).returning();
   await tx.update(schema.items).set({ ownerType: 'container', ownerId: String(corpse.id), slot: null })
     .where(and(eq(schema.items.ownerType, 'character'), eq(schema.items.ownerId, String(ch.id))));

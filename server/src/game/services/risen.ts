@@ -88,7 +88,7 @@ export async function settleRisen(tx: Tx, units: { risenId?: number; out: string
       const loc = locationId ?? r.locationId;
       const [ct] = await tx.insert(schema.containers).values({
         locationId: loc, name: `Restos de ${r.name}`, kind: 'corpse', capacity: 999,
-        expiresAt: new Date(Date.now() + cfg().permadeath.corpseHours * 3_600_000), data: { risenId: r.id },
+        expiresAt: new Date(Date.now() + (await import('./death.js')).corpseMs()), data: { risenId: r.id },
       }).returning();
       await tx.update(schema.items).set({ ownerType: 'container', ownerId: String(ct.id) }).where(and(eq(schema.items.ownerType, 'risen'), eq(schema.items.ownerId, String(r.id))));
       await tx.update(schema.risen).set({ status: 'killed', combatId: null, data: { ...r.data, killedBy: killerName } }).where(eq(schema.risen.id, r.id));

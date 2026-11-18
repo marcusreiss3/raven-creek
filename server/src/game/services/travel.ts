@@ -138,6 +138,24 @@ export async function follow(characterId: number, targetId: number | null) {
   });
 }
 
+/** Dispensar quem está seguindo você (um específico ou todos). Quem foi dispensado fica onde está. */
+export async function dismissFollower(characterId: number, targetId: number | null) {
+  return withCharacter(characterId, async (tx, ch) => {
+    assertCanAct(ch, { allowBusy: true, allowCombat: true });
+    const followers = await tx.select().from(schema.characters).where(and(eq(schema.characters.followingId, ch.id), eq(schema.characters.alive, true)));
+    const gone = targetId ? followers.filter((f) => f.id === targetId) : followers;
+    if (!gone.length) fail(targetId ? 'Essa pessoa não está seguindo você.' : 'Ninguém está seguindo você.');
+    for (const f of gone) {
+      await tx.update(schema.characters).set({ followingId: null }).where(eq(schema.characters.id, f.id));
+      await gameLog(tx, f.id, 'travel', `${fullName(ch)} dispensou você: não está mais acompanhando.`);
+      pushSelf(f.id);
+    }
+    if (ch.state !== 'traveling') await systemEmote(ch.locationId, `${fullName(ch)} dispensa ${gone.map(fullName).join(', ')}: ${gone.length > 1 ? 'não vão mais' : 'não vai mais'} junto.`);
+    pushSelf(ch.id); pushScene(ch.locationId);
+    return { ok: true, dismissed: gone.length };
+  });
+}
+
 const elapsedOf = (t: TravelRow, now: number) => t.elapsedMs + (t.status === 'active' ? now - t.lastProgressAt.getTime() : 0);
 
 /** Processa viagens ativas: encontros e chegadas. Baseado em timestamps — sobrevive a reinicializações. */

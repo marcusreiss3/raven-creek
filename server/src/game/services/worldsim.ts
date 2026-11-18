@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db, schema } from '../../db/index.js';
 import { STRUCTURES } from '../content/structures.js';
 import { rng } from '../rules/rng.js';
@@ -156,13 +156,18 @@ async function attackBase(tx: any, h: typeof schema.hordes.$inferSelect) {
   pushScene(b.locationId);
 }
 
-/** Corpos expiram; contêineres de corpos vazios somem. */
+/** Corpos se decompõem (no máximo 3 horas); o que carregavam fica no chão. */
 export async function cleanupCorpses() {
+  // corpos antigos (de quando o prazo era maior) passam a respeitar o limite
+  const { corpseMs } = await import('./death.js');
+  const limit = new Date(Date.now() + corpseMs());
+  await db.update(schema.containers).set({ expiresAt: limit }).where(and(eq(schema.containers.kind, 'corpse'), or(isNull(schema.containers.expiresAt), gt(schema.containers.expiresAt, limit))));
   const expired = await db.select().from(schema.containers).where(and(eq(schema.containers.kind, 'corpse'), lte(schema.containers.expiresAt, new Date())));
   for (const c of expired) await db.transaction(async (tx) => {
     await tx.update(schema.items).set({ ownerType: 'location', ownerId: c.locationId }).where(and(eq(schema.items.ownerType, 'container'), eq(schema.items.ownerId, String(c.id))));
     await tx.delete(schema.containers).where(eq(schema.containers.id, c.id));
     await mergeOwnerStacks(tx, 'location', c.locationId); // o que caiu do corpo junta com as pilhas que já estavam no chão
+    await systemEmote(c.locationId, `${c.name.replace(/^(Corpo|Restos) de /, 'O que restava de ')} se decompôs. Os pertences ficaram espalhados pelo chão.`, 'system');
     pushScene(c.locationId);
   });
 }

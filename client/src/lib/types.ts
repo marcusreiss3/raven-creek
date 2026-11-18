@@ -50,7 +50,8 @@ export type Scene = {
   looted: string; threat: string; characters: SceneChar[];
   powered?: boolean; project?: { id: string; name: string } | null;
   ground: { id: number; defId: string; name: string; quantity: number; icon: string; category?: string }[];
-  containers: { id: number; name: string; kind: string; baseId: number | null }[];
+  containers: { id: number; name: string; kind: string; baseId: number | null; expiresAt?: string | null }[];
+  clearing: { need: number; done: number; zombies: number } | null;
   vehicles: { id: number; name: string; type: string; seats: number; running: boolean; driverId: number | null; condition: number }[];
   base: null | { id: number; name: string; ownerCharacterId: number | null; factionId: number | null; faction: { name: string; emblem: string; color: string } | null; structures: { id: number; kind: string; hp: number; maxHp: number; building: boolean; completeAt: string | null }[] };
   combats: { id: number; reason: string }[];

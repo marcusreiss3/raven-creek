@@ -16,16 +16,34 @@ const SLOTS: { id: string; label: string; icon: string }[] = [
 ];
 const CATS: Record<string, string> = { all: 'Tudo', food: 'Comida', water: 'Água', medical: 'Medicina', weapon: 'Armas', ammo: 'Munição', clothing: 'Roupas', tool: 'Ferramentas', building: 'Construção', vehicle: 'Veículo', book: 'Livros', misc: 'Outros', container: 'Mochilas' };
 const RARITY: Record<string, string> = { common: 'text-ink-200', uncommon: 'text-moss-400', rare: 'text-steel-400', very_rare: 'text-amber-450' };
+/** Ordenação da mochila (lembrada neste navegador). */
+const SORTS: Record<string, { label: string; cmp: ((a: Item, b: Item) => number) | null }> = {
+  default: { label: 'Ordem padrão', cmp: null },
+  name: { label: 'Nome (A a Z)', cmp: (a, b) => a.name.localeCompare(b.name, 'pt-BR') },
+  name_desc: { label: 'Nome (Z a A)', cmp: (a, b) => b.name.localeCompare(a.name, 'pt-BR') },
+  heavy: { label: 'Peso (mais pesado)', cmp: (a, b) => b.weight * b.quantity - a.weight * a.quantity || a.name.localeCompare(b.name, 'pt-BR') },
+  light: { label: 'Peso (mais leve)', cmp: (a, b) => a.weight * a.quantity - b.weight * b.quantity || a.name.localeCompare(b.name, 'pt-BR') },
+  qty: { label: 'Quantidade (maior)', cmp: (a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name, 'pt-BR') },
+  qty_asc: { label: 'Quantidade (menor)', cmp: (a, b) => a.quantity - b.quantity || a.name.localeCompare(b.name, 'pt-BR') },
+};
+const readSort = () => { try { const v = localStorage.getItem('rc_inv_sort'); return v && SORTS[v] ? v : 'default'; } catch { return 'default'; } };
+const fmtKg = (kg: number) => (kg >= 10 ? kg.toFixed(0) : kg >= 1 ? kg.toFixed(1) : kg.toFixed(2)).replace('.', ',');
 const RARITY_NAME: Record<string, string> = { common: 'comum', uncommon: 'incomum', rare: 'raro', very_rare: 'muito raro' };
 
 export function InventoryPanel({ onClose }: { onClose: () => void }) {
   const { self, scene } = useGame();
   const [cat, setCat] = useState('all'); const [q, setQ] = useState(''); const [sel, setSel] = useState<number | null>(null);
+  const [sort, setSortState] = useState(readSort);
+  const setSort = (v: string) => { setSortState(v); try { localStorage.setItem('rc_inv_sort', v); } catch { /* sem armazenamento */ } };
   const mobile = useIsMobile();
   const [drag, setDrag] = useState<number | null>(null); const [over, setOver] = useState<string | null>(null);
   const items = self?.inventory ?? [];
   const loose = items.filter((i) => !i.slot);
-  const filtered = useMemo(() => loose.filter((i) => (cat === 'all' || i.category === cat) && (!q || i.name.toLowerCase().includes(q.toLowerCase()))), [items, cat, q]);
+  const filtered = useMemo(() => {
+    const list = loose.filter((i) => (cat === 'all' || i.category === cat) && (!q || i.name.toLowerCase().includes(q.toLowerCase())));
+    const cmp = SORTS[sort]?.cmp;
+    return cmp ? [...list].sort(cmp) : list;
+  }, [items, cat, q, sort]);
   if (!self) return null;
   const selected = items.find((i) => i.id === sel) ?? null;
   const cats = ['all', ...new Set(loose.map((i) => i.category))];
@@ -39,6 +57,7 @@ export function InventoryPanel({ onClose }: { onClose: () => void }) {
   };
   const dz = (id: string) => ({ onDragOver: (e: React.DragEvent) => { e.preventDefault(); setOver(id); }, onDragLeave: () => setOver(null), onDrop: (e: React.DragEvent) => { e.preventDefault(); dropOn(id); } });
   const carry = self.carry;
+  const showKg = sort === 'heavy' || sort === 'light';
   return (
     <Drawer title="Mochila" onClose={onClose} width={780} icon={<GameIcon name="inventory" size={22} />}>
       <div className="mb-5">
@@ -64,7 +83,13 @@ export function InventoryPanel({ onClose }: { onClose: () => void }) {
           <div {...dz('ground')} className={`mt-3 h-14 max-sm:hidden border border-dashed flex items-center justify-center gap-2 text-[13px] ${over === 'ground' ? 'border-blood-400 text-blood-400 bg-blood-900/30' : 'border-ink-600 text-ink-400'}`}><Trash2 size={15} />Arraste aqui para largar no chão</div>
         </div>
         <div {...dz('bag')} className={`max-sm:order-1 ${over === 'bag' ? 'outline outline-1 outline-amber-450/50' : ''}`}>
-          <div className="relative mb-2.5"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500" /><label htmlFor="inv-q" className="sr-only">Buscar item</label><input id="inv-q" className="input !pl-8 !py-1.5" placeholder="Buscar item" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="flex gap-2 mb-2.5 max-sm:flex-col">
+            <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500" /><label htmlFor="inv-q" className="sr-only">Buscar item</label><input id="inv-q" className="input !pl-8 !py-1.5" placeholder="Buscar item" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+            <label htmlFor="inv-sort" className="sr-only">Ordenar itens</label>
+            <select id="inv-sort" className="input !py-1.5 sm:!w-auto" value={sort} onChange={(e) => setSort(e.target.value)} title="Ordenar itens">
+              {Object.entries(SORTS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+            </select>
+          </div>
           <div className="flex flex-wrap gap-1 mb-3" role="tablist" aria-label="Categorias">
             {cats.map((c) => (
               <button key={c} role="tab" aria-selected={cat === c} onClick={() => setCat(c)} className={`chip !py-1 ${cat === c ? 'text-amber-450 !bg-amber-450/10' : 'text-ink-300 hover:text-ink-100'}`}>
@@ -80,7 +105,9 @@ export function InventoryPanel({ onClose }: { onClose: () => void }) {
                   aria-label={`${i.name}${i.quantity > 1 ? `, ${i.quantity} unidades` : ''}${i.freshness !== undefined && i.freshness < 20 ? ', quase estragando' : ''}`}
                   className={`relative h-[94px] p-2 flex flex-col items-center justify-between text-center cursor-grab active:cursor-grabbing bg-[#101109] border shadow-[inset_0_2px_5px_rgba(0,0,0,.7)] ${sel === i.id ? 'border-amber-450 bg-amber-450/[.06]' : 'border-black hover:border-ink-500'}`}>
                   <GameIcon name={itemIcon(i.defId, i.category)} size={34} className={`${RARITY[i.rarity]} mt-0.5`} />
-                  <span className="text-[12.5px] leading-tight text-ink-100 line-clamp-2">{i.name}</span>
+                  {showKg ? (
+                    <span className="leading-tight"><span className="block text-[12.5px] text-ink-100 line-clamp-1">{i.name}</span><span className="block text-[11.5px] text-ink-400 tabular-nums">{fmtKg(i.weight * i.quantity)} kg</span></span>
+                  ) : <span className="text-[12.5px] leading-tight text-ink-100 line-clamp-2">{i.name}</span>}
                   {i.quantity > 1 && <span className="absolute top-1 right-1 tape !text-[13px] !px-1.5 !py-0 rotate-[3deg]">{i.quantity}</span>}
                   {i.props.doses && <span className="absolute top-1 right-1 text-[11.5px] text-ink-300">{i.durability} dose{i.durability === 1 ? '' : 's'}</span>}
                   {i.freshness !== undefined && i.freshness < 50 && <span className={`absolute top-1 left-1 ${i.freshness < 20 ? 'text-blood-400' : 'text-amber-450'}`} title={i.freshness < 20 ? 'Quase estragando' : 'Passando do ponto'}><GameIcon name="spoiled_food" size={15} label={i.freshness < 20 ? 'Quase estragando' : 'Passando do ponto'} /></span>}

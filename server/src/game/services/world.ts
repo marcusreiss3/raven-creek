@@ -57,6 +57,7 @@ export async function buildScene(locationId: string, tx: Tx = db) {
     location: { id: l.id, name: l.name, description: l.description, category: l.category, regionId: l.regionId, sceneKey: l.sceneKey, musicKey: l.musicKey, indoor: l.indoor, buildable: l.buildable, tags: l.tags, data: l.data },
     powered: isPowered(l.id),
     project: (() => { const d = PROJECTS.find((x) => x.locationId === l.id); return d ? { id: d.id, name: d.name } : null; })(),
+    clearing: Number((l.data as any)?.clearWork ?? 0) > 0 ? { need: Number((l.data as any).clearWork), done: Number((l.data as any).cleared ?? 0), zombies: ll?.zombies ?? 0 } : null,
     looted: searchedRatio < 0.15 ? 'saqueado' : searchedRatio < 0.45 ? 'revirado' : searchedRatio < 0.8 ? 'mexido' : 'intocado',
     threat: describeThreat(ll?.zombies ?? 0, hordesHere.reduce((s, h) => s + h.size, 0)),
     characters: chars.map((ch) => ({
@@ -65,7 +66,7 @@ export async function buildScene(locationId: string, tx: Tx = db) {
       visibleCondition: visibleCondition(ch.needs),
     })),
     ground: ground.map((i) => ({ id: i.id, defId: i.defId, name: itemDef(i.defId)?.name ?? i.defId, quantity: i.quantity, icon: itemDef(i.defId)?.icon ?? 'generic', category: itemDef(i.defId)?.category })),
-    containers: containers.map((ct) => ({ id: ct.id, name: ct.name, kind: ct.kind, baseId: ct.baseId })),
+    containers: containers.map((ct) => ({ id: ct.id, name: ct.name, kind: ct.kind, baseId: ct.baseId, expiresAt: ct.kind === 'corpse' ? ct.expiresAt : null })),
     vehicles: vehicles.map((v) => ({ id: v.id, name: v.name, type: v.type, seats: v.seats, running: v.running, driverId: v.driverId, condition: Math.round((v.engine + v.body) / 2) })),
     base: base ? { id: base.id, name: base.name, ownerCharacterId: base.ownerCharacterId, factionId: base.factionId, faction, structures: structures.map((s) => ({ id: s.id, kind: s.kind, hp: Math.round(s.hp), maxHp: s.maxHp, building: !!(s.completeAt && s.completeAt > new Date()) , completeAt: s.completeAt })) } : null,
     combats, exits,
